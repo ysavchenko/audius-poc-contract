@@ -4,9 +4,7 @@ use crate::error::AudiusError;
 use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
-    program_option::COption,
     pubkey::Pubkey,
-    sysvar,
 };
 use std::mem::size_of;
 
