@@ -7,6 +7,8 @@ use solana_program::{
     pubkey::Pubkey,
     sysvar,
 };
+use std::mem::size_of;
+use crate::error::AudiusError;
 
 /// Instructions supported by the Audius program
 #[repr(C)]
@@ -23,13 +25,24 @@ pub enum AudiusInstruction {
 }
 impl AudiusInstruction {
     /// Unpacks a byte buffer into a [AudiusInstruction]().
-    pub fn unpack(input: &[u8]) -> Result<(), ProgramError> {
-        // TODO return Self
-        Ok(())
+    pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
+        let (&tag, rest) = input.split_first().ok_or(AudiusError::InvalidInstruction)?;
+        Ok(match tag {
+            0 => Self::InitSignerGroup,
+            1 => Self::InitValidSigner,
+            _ => return Err(AudiusError::InvalidInstruction.into()),
+        })
     }
 
     /// Packs a [AudiusInstruction]() into a byte buffer.
     pub fn pack(&self) -> Vec<u8> {
-        Vec::new()
+        let mut buf = Vec::with_capacity(size_of::<Self>());
+        match self {
+            Self::InitSignerGroup => buf.push(0),
+            Self::InitValidSigner => buf.push(1),
+            Self::ClearValidSigner => buf.push(2),
+            Self::ValidateSignature => buf.push(3),  // TODO: add parameters
+        };
+        buf
     }
 }
