@@ -12,6 +12,10 @@ use solana_program::{
 /// Program state handler
 pub struct Processor {}
 impl Processor {
+
+    /// SignerGroup version which told about group initializing
+    pub const SIGNER_GROUP_VERSION: u8 = 1;
+
     /// Process [InitSignerGroup]().
     pub fn process_init_signer_group(accounts: &[AccountInfo]) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -26,7 +30,7 @@ impl Processor {
             return Err(AudiusError::SignerGroupAlreadyInitialized.into());
         }
 
-        signer_group.version = 1;
+        signer_group.version = Self::SIGNER_GROUP_VERSION;
         signer_group.owner = *group_owner_info.key;
 
         signer_group.serialize(&mut signer_group_info.data.borrow_mut())

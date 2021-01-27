@@ -12,13 +12,16 @@ use std::mem::size_of;
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum AudiusInstruction {
-    /// Create new signer group account
+    ///   Create new signer group account
+    /// 
+    ///   0. `[w]` New SignerGroup to create
+    ///   1. `[]` SignerGroup's owner
     InitSignerGroup,
-    /// Create new valid signer account
+    ///   Create new valid signer account
     InitValidSigner,
-    /// Remove valid signer from the group
+    ///   Remove valid signer from the group
     ClearValidSigner,
-    /// Validate signature issued by valid signer
+    ///   Validate signature issued by valid signer
     ValidateSignature,
 }
 impl AudiusInstruction {
