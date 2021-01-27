@@ -13,6 +13,18 @@ pub enum AudiusError {
     /// Signer group already initialized
     #[error("Signer group already initialized")]
     SignerGroupAlreadyInitialized,
+    /// Uninitialized signer group
+    #[error("Uninitialized signer group")]
+    UninitializedSignerGroup,
+    /// Signer is already initialized
+    #[error("Signer is already initialized")]
+    SignerAlreadyInitialized,
+    /// Wrong owner
+    #[error("Wrong owner")]
+    WrongOwner,
+    /// Signature missing
+    #[error("Signature missing")]
+    SignatureMissing,
 }
 impl From<AudiusError> for ProgramError {
     fn from(e: AudiusError) -> Self {
