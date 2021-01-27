@@ -7,9 +7,12 @@ use thiserror::Error;
 /// Errors that may be returned by the Audius program.
 #[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum AudiusError {
-    /// Test error
-    #[error("TestError")]
-    TestError,
+    /// Invalid instruction
+    #[error("Invalid instruction")]
+    InvalidInstruction,
+    /// Signer group already initialized
+    #[error("Signer group already initialized")]
+    SignerGroupAlreadyInitialized,
 }
 impl From<AudiusError> for ProgramError {
     fn from(e: AudiusError) -> Self {
