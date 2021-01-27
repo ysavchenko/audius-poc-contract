@@ -22,7 +22,7 @@ pub struct ValidSigner {
     /// SignerGroup this ValidSigner belongs to
     pub signer_group: Pubkey,
     /// Ethereum public key used for signing messages
-    pub public_key: Vec<u8>,
+    pub public_key: [u8; 20],
 }
 
 impl SignerGroup {
@@ -52,6 +52,11 @@ impl SignerGroup {
         *value = *self;
         Ok(())
     }
+
+    /// Check if SignerGroup is initialized
+    pub fn is_initialized(&self) -> bool {
+        self.version != 0
+    }
 }
 
 impl ValidSigner {
@@ -80,6 +85,11 @@ impl ValidSigner {
         *value = self.clone();
         Ok(())
     }
+
+    /// Check if ValidSigner is initialized
+    pub fn is_initialized(&self) -> bool {
+        self.version != 0
+    }
 }
 
 #[cfg(test)]
@@ -99,6 +109,8 @@ mod test {
         let deserialized: SignerGroup = SignerGroup::deserialize(&buffer).unwrap();
 
         assert_eq!(signer_group, deserialized);
+
+        assert_eq!(signer_group.is_initialized(), false);
     }
 
     #[test]
@@ -106,7 +118,7 @@ mod test {
         let valid_signer = ValidSigner {
             version: 1,
             signer_group: Pubkey::new_from_array([1; 32]),
-            public_key: vec![1, 2, 3, 4, 5],
+            public_key: [7; 20],
         };
 
         let mut buffer: [u8; ValidSigner::LEN] = [0; ValidSigner::LEN];
@@ -115,5 +127,7 @@ mod test {
         let deserialized: ValidSigner = ValidSigner::deserialize(&buffer).unwrap();
 
         assert_eq!(valid_signer, deserialized);
+
+        assert_eq!(valid_signer.is_initialized(), true);
     }
 }
