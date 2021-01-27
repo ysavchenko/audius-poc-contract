@@ -1,5 +1,6 @@
 //! Instruction types
 
+use crate::error::AudiusError;
 use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
@@ -8,7 +9,6 @@ use solana_program::{
     sysvar,
 };
 use std::mem::size_of;
-use crate::error::AudiusError;
 
 /// Instructions supported by the Audius program
 #[repr(C)]
@@ -41,8 +41,25 @@ impl AudiusInstruction {
             Self::InitSignerGroup => buf.push(0),
             Self::InitValidSigner => buf.push(1),
             Self::ClearValidSigner => buf.push(2),
-            Self::ValidateSignature => buf.push(3),  // TODO: add parameters
+            Self::ValidateSignature => buf.push(3), // TODO: add parameters
         };
         buf
     }
+}
+
+/// Creates `InitSignerGroup` instruction
+pub fn init_signer_group(
+    program_id: &Pubkey,
+    signer_group: &Pubkey,
+    owner: &Pubkey,
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*signer_group, false),
+        AccountMeta::new_readonly(*owner, false),
+    ];
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data: AudiusInstruction::InitSignerGroup.pack(),
+    })
 }

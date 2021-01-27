@@ -10,6 +10,9 @@ pub enum AudiusError {
     /// Invalid instruction
     #[error("Invalid instruction")]
     InvalidInstruction,
+    /// Signer group already initialized
+    #[error("Signer group already initialized")]
+    SignerGroupAlreadyInitialized,
 }
 impl From<AudiusError> for ProgramError {
     fn from(e: AudiusError) -> Self {
