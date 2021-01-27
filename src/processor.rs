@@ -13,7 +13,7 @@ use solana_program::{
 pub struct Processor {}
 impl Processor {
 
-    /// SignerGroup version which told about group initializing
+    /// SignerGroup version indicating group initialization
     pub const SIGNER_GROUP_VERSION: u8 = 1;
 
     /// Process [InitSignerGroup]().
