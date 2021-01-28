@@ -102,11 +102,11 @@ impl Processor {
         let mut valid_signer = ValidSigner::deserialize(&valid_signer_info.data.borrow())?;
 
         if !valid_signer.is_initialized() {
-            return Err(AudiusError::ValidSignerIsntInitialized.into());
+            return Err(AudiusError::ValidSignerNotInitialized.into());
         }
 
         if valid_signer.signer_group != *signer_group_info.key {
-            return Err(AudiusError::SignerDoesntBelongToThisGroup.into());
+            return Err(AudiusError::WrongSignerGroup.into());
         }
 
         signer_group.check_owner(&signer_groups_owner_info)?;
@@ -149,8 +149,8 @@ impl PrintProgramError for AudiusError {
             AudiusError::SignerGroupAlreadyInitialized => msg!("Signer group already initialized"),
             AudiusError::UninitializedSignerGroup => msg!("Uninitialized signer group"),
             AudiusError::SignerAlreadyInitialized => msg!("Signer is already initialized"),
-            AudiusError::ValidSignerIsntInitialized => msg!("Valid signer isn't initialized"),
-            AudiusError::SignerDoesntBelongToThisGroup => msg!("Signer doesnt belong to this group"),
+            AudiusError::ValidSignerNotInitialized => msg!("Valid signer isn't initialized"),
+            AudiusError::WrongSignerGroup => msg!("Signer doesnt belong to this group"),
             AudiusError::WrongOwner => msg!("Wrong owner"),
             AudiusError::SignatureMissing => msg!("Signature missing"),
         }

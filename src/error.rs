@@ -21,10 +21,10 @@ pub enum AudiusError {
     SignerAlreadyInitialized,
     /// Valid signer isn't initialized
     #[error("Valid signer isn't initialized")]
-    ValidSignerIsntInitialized,
+    ValidSignerNotInitialized,
     /// Signer doesn't belong to this group
     #[error("Signer doesnt belong to this group")]
-    SignerDoesntBelongToThisGroup,
+    WrongSignerGroup,
     /// Wrong owner
     #[error("Wrong owner")]
     WrongOwner,
