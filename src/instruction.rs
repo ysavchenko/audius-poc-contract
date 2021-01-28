@@ -24,6 +24,10 @@ pub enum AudiusInstruction {
     ///   2. `[s]` SignerGroup's owner
     InitValidSigner([u8; 20]),
     ///   Remove valid signer from the group
+    /// 
+    ///   0. `[w]` Initialized valid signer to remove
+    ///   1. `[]` Signer group to remove from
+    ///   2. `[s]` SignerGroup's owner
     ClearValidSigner,
     ///   Validate signature issued by valid signer
     ValidateSignature,
@@ -38,6 +42,7 @@ impl AudiusInstruction {
                 let eth_pubkey: &[u8; 20] = unpack_reference(rest)?;
                 Self::InitValidSigner(*eth_pubkey)
             }
+            2 => Self::ClearValidSigner,
             _ => return Err(AudiusError::InvalidInstruction.into()),
         })
     }
@@ -107,5 +112,19 @@ pub fn init_valid_signer(
         program_id: *program_id,
         accounts,
         data,
+    })
+}
+
+/// Creates `ClearValidSigner` instruction
+pub fn clear_valid_signer(program_id: &Pubkey, valid_signer_account: &Pubkey, signer_group: &Pubkey, groups_owner: &Pubkey) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*valid_signer_account, false),
+        AccountMeta::new_readonly(*signer_group, false),
+        AccountMeta::new_readonly(*groups_owner, true),
+    ];
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data: AudiusInstruction::ClearValidSigner.pack(),
     })
 }
