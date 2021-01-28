@@ -1,4 +1,3 @@
-
 #![cfg(feature = "test-bpf")]
 
 use audius::*;
@@ -12,7 +11,7 @@ use solana_sdk::{
 };
 
 pub fn program_test() -> ProgramTest {
-    ProgramTest::new("audius", id(), processor!(processor::Processor::process),)
+    ProgramTest::new("audius", id(), processor!(processor::Processor::process))
 }
 
 async fn create_account(
@@ -65,16 +64,13 @@ async fn init_signer_group() {
     .await
     .unwrap();
 
-    let mut transaction =
-        Transaction::new_with_payer(
-            &[instruction::init_signer_group(
-                &id(),
-                &signer_group.pubkey(),
-                &group_owner.pubkey(),
-            )
-            .unwrap()],
-            Some(&payer.pubkey()),
-        );
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            instruction::init_signer_group(&id(), &signer_group.pubkey(), &group_owner.pubkey())
+                .unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
     transaction.sign(&[&payer], recent_blockhash);
     banks_client.process_transaction(transaction).await.unwrap();
 
@@ -107,24 +103,27 @@ async fn init_valid_signer() {
     .await
     .unwrap();
 
-    let mut transaction =
-        Transaction::new_with_payer(
-            &[instruction::init_signer_group(
-                &id(),
-                &signer_group.pubkey(),
-                &group_owner.pubkey(),
-            )
-            .unwrap()],
-            Some(&payer.pubkey()),
-        );
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            instruction::init_signer_group(&id(), &signer_group.pubkey(), &group_owner.pubkey())
+                .unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
     transaction.sign(&[&payer], recent_blockhash);
     banks_client.process_transaction(transaction).await.unwrap();
 
     let valid_signer = Keypair::new();
 
-    create_account(&mut banks_client, &payer, &recent_blockhash, &valid_signer, state::ValidSigner::LEN)
-        .await
-        .unwrap();
+    create_account(
+        &mut banks_client,
+        &payer,
+        &recent_blockhash,
+        &valid_signer,
+        state::ValidSigner::LEN,
+    )
+    .await
+    .unwrap();
 
     let eth_pub_key = [1u8; 20];
     let latest_blockhash = banks_client.get_recent_blockhash().await.unwrap();
@@ -141,4 +140,16 @@ async fn init_valid_signer() {
     );
     transaction.sign(&[&payer, &group_owner], latest_blockhash);
     banks_client.process_transaction(transaction).await.unwrap();
+
+    let valid_signer_account = get_account(&mut banks_client, &valid_signer.pubkey()).await;
+
+    assert_eq!(valid_signer_account.data.len(), state::ValidSigner::LEN);
+    assert_eq!(valid_signer_account.owner, id());
+
+    let valid_signer_data =
+        state::ValidSigner::deserialize(&valid_signer_account.data.as_slice()).unwrap();
+
+    assert!(valid_signer_data.is_initialized());
+    assert_eq!(valid_signer_data.public_key, eth_pub_key);
+    assert_eq!(valid_signer_data.signer_group, signer_group.pubkey());
 }

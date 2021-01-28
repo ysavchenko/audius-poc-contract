@@ -1,16 +1,16 @@
 //! Program state processor
 
-use solana_program::decode_error::DecodeError;
-use solana_program::program_error::PrintProgramError;
-use num_traits::FromPrimitive;
 use crate::error::AudiusError;
 use crate::instruction::AudiusInstruction;
 use crate::state::{SignerGroup, ValidSigner};
+use num_traits::FromPrimitive;
+use solana_program::decode_error::DecodeError;
+use solana_program::program_error::PrintProgramError;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
-    pubkey::Pubkey,
     msg,
+    pubkey::Pubkey,
 };
 
 /// Program state handler
@@ -103,6 +103,13 @@ impl PrintProgramError for AudiusError {
     where
         E: 'static + std::error::Error + DecodeError<E> + PrintProgramError + FromPrimitive,
     {
-        //TODO: Implement error printing here
+        match self {
+            AudiusError::InvalidInstruction => msg!("Invalid instruction"),
+            AudiusError::SignerGroupAlreadyInitialized => msg!("Signer group already initialized"),
+            AudiusError::UninitializedSignerGroup => msg!("Uninitialized signer group"),
+            AudiusError::SignerAlreadyInitialized => msg!("Signer is already initialized"),
+            AudiusError::WrongOwner => msg!("Wrong owner"),
+            AudiusError::SignatureMissing => msg!("Signature missing"),
+        }
     }
 }

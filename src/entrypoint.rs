@@ -3,10 +3,10 @@
 #![cfg(all(target_arch = "bpf", not(feature = "no-entrypoint")))]
 
 use crate::{error::AudiusError, processor::Processor};
+use solana_program::program_error::PrintProgramError;
 use solana_program::{
     account_info::AccountInfo, entrypoint, entrypoint::ProgramResult, pubkey::Pubkey,
 };
-use solana_program::program_error::PrintProgramError;
 
 entrypoint!(process_instruction);
 fn process_instruction(
