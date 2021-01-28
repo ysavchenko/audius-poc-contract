@@ -1,13 +1,17 @@
 //! State transition types
 
-use solana_program::{entrypoint::ProgramResult, program_error::ProgramError, pubkey::Pubkey};
+use crate::error::AudiusError;
+use solana_program::{
+    account_info::AccountInfo, entrypoint::ProgramResult, program_error::ProgramError,
+    pubkey::Pubkey,
+};
 use std::mem::size_of;
 
 /// Signer group data
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SignerGroup {
-    /// Groups verstion
+    /// Groups version
     pub version: u8,
     /// Pubkey of the account authorized to add/remove valid signers
     pub owner: Pubkey,
@@ -56,6 +60,17 @@ impl SignerGroup {
     /// Check if SignerGroup is initialized
     pub fn is_initialized(&self) -> bool {
         self.version != 0
+    }
+
+    /// Check owner validity and signature
+    pub fn check_owner(&self, owner_info: &AccountInfo) -> Result<(), ProgramError> {
+        if *owner_info.key != self.owner {
+            return Err(AudiusError::WrongOwner.into());
+        }
+        if !owner_info.is_signer {
+            return Err(AudiusError::SignatureMissing.into());
+        }
+        Ok(())
     }
 }
 
