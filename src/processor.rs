@@ -35,7 +35,8 @@ impl Processor {
         signer_group.version = Self::SIGNER_GROUP_VERSION;
         signer_group.owner = *group_owner_info.key;
 
-        signer_group.serialize(&mut signer_group_info.data.borrow_mut())
+        signer_group.serialize(&mut signer_group_info.data.borrow_mut())?;
+        Ok(())
     }
 
     /// Process [InitValidSigner]().
@@ -71,7 +72,8 @@ impl Processor {
         valid_signer.signer_group = *signer_group_info.key;
         valid_signer.public_key = eth_pubkey;
 
-        valid_signer.serialize(&mut valid_signer_info.data.borrow_mut())
+        valid_signer.serialize(&mut valid_signer_info.data.borrow_mut())?;
+        Ok(())
     }
 
     /// Process an [Instruction]().
@@ -101,29 +103,30 @@ mod test {
     };
 
     pub fn program_test() -> ProgramTest {
-        ProgramTest::new("audius", id(), processor!(processor::Processor::process))
+        ProgramTest::new("audius", id(), processor!(processor::Processor::process),)
     }
 
-    async fn create_signer_group_info_account(
+    async fn create_account(
         banks_client: &mut BanksClient,
         payer: &Keypair,
         recent_blockhash: &Hash,
-        signer_group_acc: &Keypair,
+        account: &Keypair,
+        struct_size: usize,
     ) -> Result<(), TransportError> {
         let rent = banks_client.get_rent().await.unwrap();
-        let signer_group_rent = rent.minimum_balance(state::SignerGroup::LEN);
+        let account_rent = rent.minimum_balance(struct_size);
 
         let mut transaction = Transaction::new_with_payer(
             &[system_instruction::create_account(
                 &payer.pubkey(),
-                &signer_group_acc.pubkey(),
-                signer_group_rent,
-                state::SignerGroup::LEN as u64,
+                &account.pubkey(),
+                account_rent,
+                struct_size as u64,
                 &id(),
             )],
             Some(&payer.pubkey()),
         );
-        transaction.sign(&[payer, signer_group_acc], *recent_blockhash);
+        transaction.sign(&[payer, account], *recent_blockhash);
         banks_client.process_transaction(transaction).await?;
         Ok(())
     }
@@ -143,11 +146,12 @@ mod test {
         let signer_group = Keypair::new();
         let group_owner = Keypair::new();
 
-        create_signer_group_info_account(
+        create_account(
             &mut banks_client,
             &payer,
             &recent_blockhash,
             &signer_group,
+            state::SignerGroup::LEN,
         )
         .await
         .unwrap();
@@ -175,5 +179,58 @@ mod test {
 
         assert!(signer_group_data.is_initialized());
         assert_eq!(signer_group_data.owner, group_owner.pubkey());
+    }
+
+    #[tokio::test]
+    async fn init_valid_signer() {
+        let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
+
+        let signer_group = Keypair::new();
+        let group_owner = Keypair::new();
+
+        create_account(
+            &mut banks_client,
+            &payer,
+            &recent_blockhash,
+            &signer_group,
+            state::SignerGroup::LEN,
+        )
+        .await
+        .unwrap();
+
+        let mut transaction =
+            Transaction::new_with_payer(
+                &[instruction::init_signer_group(
+                    &id(),
+                    &signer_group.pubkey(),
+                    &group_owner.pubkey(),
+                )
+                .unwrap()],
+                Some(&payer.pubkey()),
+            );
+        transaction.sign(&[&payer], recent_blockhash);
+        banks_client.process_transaction(transaction).await.unwrap();
+
+        let valid_signer = Keypair::new();
+
+        create_account(&mut banks_client, &payer, &recent_blockhash, &valid_signer, state::ValidSigner::LEN)
+            .await
+            .unwrap();
+
+        let eth_pub_key = [1u8; 20];
+        let latest_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        let mut transaction = Transaction::new_with_payer(
+            &[instruction::init_valid_signer(
+                &id(),
+                &valid_signer.pubkey(),
+                &signer_group.pubkey(),
+                &group_owner.pubkey(),
+                eth_pub_key,
+            )
+            .unwrap()],
+            Some(&payer.pubkey()),
+        );
+        transaction.sign(&[&payer, &group_owner], latest_blockhash);
+        banks_client.process_transaction(transaction).await.unwrap();
     }
 }

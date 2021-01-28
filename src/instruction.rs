@@ -44,16 +44,17 @@ impl AudiusInstruction {
 
     /// Packs a [AudiusInstruction]() into a byte buffer.
     pub fn pack(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(size_of::<Self>());
+        let mut buf = vec![0u8; size_of::<AudiusInstruction>()];
         match self {
-            Self::InitSignerGroup => buf.push(0),
+            Self::InitSignerGroup => buf[0] = 0,
             Self::InitValidSigner(eth_pubkey) => {
-                buf.push(1);
+                buf[0] = 1;
+                #[allow(clippy::cast_ptr_alignment)]
                 let packed_pubkey = unsafe { &mut *(&mut buf[1] as *mut u8 as *mut [u8; 20]) };
                 *packed_pubkey = *eth_pubkey;
             }
-            Self::ClearValidSigner => buf.push(2),
-            Self::ValidateSignature => buf.push(3), // TODO: add parameters
+            Self::ClearValidSigner => buf[0] = 2,
+            Self::ValidateSignature => buf[0] = 3, // TODO: add parameters
         };
         buf
     }
@@ -65,7 +66,7 @@ pub fn unpack_reference<T>(input: &[u8]) -> Result<&T, ProgramError> {
         return Err(ProgramError::InvalidAccountData);
     }
     #[allow(clippy::cast_ptr_alignment)]
-    let val: &T = unsafe { &*(&input[1] as *const u8 as *const T) };
+    let val: &T = unsafe { &*(&input[0] as *const u8 as *const T) };
     Ok(val)
 }
 
@@ -100,7 +101,7 @@ pub fn init_valid_signer(
     let accounts = vec![
         AccountMeta::new(*valid_signer_account, false),
         AccountMeta::new_readonly(*signer_group, false),
-        AccountMeta::new(*groups_owner, true),
+        AccountMeta::new_readonly(*groups_owner, true),
     ];
     Ok(Instruction {
         program_id: *program_id,
