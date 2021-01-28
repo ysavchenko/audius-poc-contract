@@ -22,6 +22,9 @@ impl Processor {
     /// ValidSigner version indicating signer initialization
     pub const VALID_SIGNER_VERSION: u8 = 1;
 
+    /// ValidSigner version indicating signer uninitialization
+    pub const VALID_SIGNER_UNINITIALIZED_VERSION: u8 = 0;
+
     /// Process [InitSignerGroup]().
     pub fn process_init_signer_group(accounts: &[AccountInfo]) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -80,6 +83,40 @@ impl Processor {
         Ok(())
     }
 
+    /// Process [ClearValidSigner]().
+    pub fn process_clear_valid_signer(accounts: &[AccountInfo]) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        // initialized valid signer account
+        let valid_signer_info = next_account_info(account_info_iter)?;
+        // signer group account
+        let signer_group_info = next_account_info(account_info_iter)?;
+        // signer group's owner
+        let signer_groups_owner_info = next_account_info(account_info_iter)?;
+
+        let signer_group = SignerGroup::deserialize(&signer_group_info.data.borrow())?;
+
+        if !signer_group.is_initialized() {
+            return Err(AudiusError::UninitializedSignerGroup.into());
+        }
+
+        let mut valid_signer = ValidSigner::deserialize(&valid_signer_info.data.borrow())?;
+
+        if !valid_signer.is_initialized() {
+            return Err(AudiusError::ValidSignerNotInitialized.into());
+        }
+
+        if valid_signer.signer_group != *signer_group_info.key {
+            return Err(AudiusError::WrongSignerGroup.into());
+        }
+
+        signer_group.check_owner(&signer_groups_owner_info)?;
+
+        valid_signer.version = Self::VALID_SIGNER_UNINITIALIZED_VERSION;
+
+        valid_signer.serialize(&mut valid_signer_info.data.borrow_mut())?;
+        Ok(())
+    }
+
     /// Process an [Instruction]().
     pub fn process(_program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = AudiusInstruction::unpack(input)?;
@@ -92,6 +129,10 @@ impl Processor {
             AudiusInstruction::InitValidSigner(eth_pubkey) => {
                 msg!("Instruction: InitValidSigner");
                 Self::process_init_valid_signer(accounts, eth_pubkey)
+            }
+            AudiusInstruction::ClearValidSigner => {
+                msg!("Instruction: ClearValidSigner");
+                Self::process_clear_valid_signer(accounts)
             }
             _ => Err(AudiusError::InvalidInstruction.into()), // TODO: remove when cover all the instructions
         }
@@ -108,6 +149,8 @@ impl PrintProgramError for AudiusError {
             AudiusError::SignerGroupAlreadyInitialized => msg!("Signer group already initialized"),
             AudiusError::UninitializedSignerGroup => msg!("Uninitialized signer group"),
             AudiusError::SignerAlreadyInitialized => msg!("Signer is already initialized"),
+            AudiusError::ValidSignerNotInitialized => msg!("Valid signer isn't initialized"),
+            AudiusError::WrongSignerGroup => msg!("Signer doesnt belong to this group"),
             AudiusError::WrongOwner => msg!("Wrong owner"),
             AudiusError::SignatureMissing => msg!("Signature missing"),
         }
