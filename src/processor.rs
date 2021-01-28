@@ -7,7 +7,11 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
     pubkey::Pubkey,
+    program_error::PrintProgramError,
+    msg,
+    decode_error::DecodeError,
 };
+use num_traits::FromPrimitive;
 
 /// Program state handler
 pub struct Processor {}
@@ -86,6 +90,22 @@ impl Processor {
                 Self::process_init_valid_signer(accounts, eth_pubkey)
             }
             _ => Err(AudiusError::InvalidInstruction.into()), // TODO: remove when cover all the instructions
+        }
+    }
+}
+
+impl PrintProgramError for AudiusError {
+    fn print<E>(&self)
+    where
+        E: 'static + std::error::Error + DecodeError<E> + PrintProgramError + FromPrimitive,
+    {
+        match self {
+            AudiusError::InvalidInstruction => msg!("Invalid instruction"),
+            AudiusError::SignerGroupAlreadyInitialized => msg!("Signer group already initialized"),
+            AudiusError::UninitializedSignerGroup => msg!("Uninitialized signer group"),
+            AudiusError::SignerAlreadyInitialized => msg!("Signer is already initialized"),
+            AudiusError::WrongOwner => msg!("Wrong owner"),
+            AudiusError::SignatureMissing => msg!("Signature missing"),
         }
     }
 }
