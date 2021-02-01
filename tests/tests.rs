@@ -2,17 +2,17 @@
 
 use audius::*;
 use rand::{thread_rng, Rng};
-use secp256k1::{Message, PublicKey, RecoveryId, SecretKey, Signature};
+use secp256k1::{PublicKey, SecretKey};
 use sha3::Digest;
 use solana_program::{hash::Hash, pubkey::Pubkey, system_instruction};
 use solana_program_test::*;
 use solana_sdk::{
     account::Account,
+    secp256k1_instruction,
     signature::{Keypair, Signer},
     transaction::Transaction,
     transport::TransportError,
 };
-use std::mem::size_of;
 
 pub fn program_test() -> ProgramTest {
     ProgramTest::new("audius", id(), processor!(processor::Processor::process))
@@ -101,7 +101,6 @@ async fn process_tx_init_valid_signer(
     banks_client: &mut BanksClient,
     eth_pub_key: [u8; 20],
 ) -> Result<(), TransportError> {
-    let latest_blockhash = banks_client.get_recent_blockhash().await.unwrap();
     let mut transaction = Transaction::new_with_payer(
         &[instruction::init_valid_signer(
             &id(),
@@ -113,7 +112,7 @@ async fn process_tx_init_valid_signer(
         .unwrap()],
         Some(&payer.pubkey()),
     );
-    transaction.sign(&[payer, group_owner], latest_blockhash);
+    transaction.sign(&[payer, group_owner], recent_blockhash);
     banks_client.process_transaction(transaction).await?;
     Ok(())
 }
@@ -271,23 +270,10 @@ async fn validate_signature() {
     let secp_pubkey = PublicKey::from_secret_key(&priv_key);
     let eth_pubkey = construct_eth_pubkey(&secp_pubkey);
 
-    let message = vec![5; 20];
+    let message = [1u8; 29];
 
-    let mut hasher = sha3::Keccak256::new();
-    hasher.update(&message);
-
-    let message_hash = hasher.finalize();
-    let mut message_hash_arr = [0u8; 32];
-    message_hash_arr.copy_from_slice(&message_hash.as_slice());
-    let message = Message::parse(&message_hash_arr);
-    let (signature, recovery_id) = secp256k1::sign(&message, &priv_key);
-    let signature_arr = signature.serialize();
-
-    let signature_param = instruction::Signature {
-        signature: signature_arr,
-        recovery_id: recovery_id.serialize(),
-        message: message_hash_arr,
-    };
+    let secp256_program_instruction =
+        secp256k1_instruction::new_secp256k1_instruction(&priv_key, &message);
 
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
@@ -326,13 +312,16 @@ async fn validate_signature() {
     .unwrap();
 
     let mut transaction = Transaction::new_with_payer(
-        &[instruction::validate_signature(
-            &id(),
-            &valid_signer.pubkey(),
-            &signer_group.pubkey(),
-            signature_param,
-        )
-        .unwrap()],
+        &[
+            secp256_program_instruction.clone(),
+            instruction::validate_signature(
+                &id(),
+                &valid_signer.pubkey(),
+                &signer_group.pubkey(),
+                secp256_program_instruction.data.as_ref(),
+            )
+            .unwrap(),
+        ],
         Some(&payer.pubkey()),
     );
     transaction.sign(&[&payer], recent_blockhash);
@@ -340,112 +329,17 @@ async fn validate_signature() {
 }
 
 #[tokio::test]
-async fn validate_wrong_signature() {
+async fn validate_signature_with_wrong_data() {
     let mut rng = thread_rng();
     let key: [u8; 32] = rng.gen();
     let priv_key = SecretKey::parse(&key).unwrap();
     let secp_pubkey = PublicKey::from_secret_key(&priv_key);
     let eth_pubkey = construct_eth_pubkey(&secp_pubkey);
 
-    let message = vec![5; 20];
+    let message = [1u8; 29];
 
-    let mut hasher = sha3::Keccak256::new();
-    hasher.update(&message);
-
-    let message_hash = hasher.finalize();
-    let mut message_hash_arr = [0u8; 32];
-    message_hash_arr.copy_from_slice(&message_hash.as_slice());
-    let message = Message::parse(&message_hash_arr);
-    let (signature, recovery_id) = secp256k1::sign(&message, &priv_key);
-    let signature_arr = signature.serialize();
-
-    let signature_param = instruction::Signature {
-        signature: signature_arr,
-        recovery_id: recovery_id.serialize(),
-        message: message_hash_arr,
-    };
-
-    let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
-
-    process_tx_init_signer_group(
-        &signer_group.pubkey(),
-        &group_owner.pubkey(),
-        &payer,
-        recent_blockhash,
-        &mut banks_client,
-    )
-    .await
-    .unwrap();
-
-    let valid_signer = Keypair::new();
-
-    create_account(
-        &mut banks_client,
-        &payer,
-        &recent_blockhash,
-        &valid_signer,
-        state::ValidSigner::LEN,
-    )
-    .await
-    .unwrap();
-
-    let key_malicious: [u8; 32] = rng.gen();
-    let priv_key_malicious = SecretKey::parse(&key_malicious).unwrap();
-    let secp_pubkey_malicious = PublicKey::from_secret_key(&priv_key_malicious);
-    let eth_pubkey_malicious = construct_eth_pubkey(&secp_pubkey_malicious);
-    process_tx_init_valid_signer(
-        &valid_signer.pubkey(),
-        &signer_group.pubkey(),
-        &group_owner,
-        &payer,
-        recent_blockhash,
-        &mut banks_client,
-        eth_pubkey_malicious,
-    )
-    .await
-    .unwrap();
-
-    let mut transaction = Transaction::new_with_payer(
-        &[instruction::validate_signature(
-            &id(),
-            &valid_signer.pubkey(),
-            &signer_group.pubkey(),
-            signature_param,
-        )
-        .unwrap()],
-        Some(&payer.pubkey()),
-    );
-    transaction.sign(&[&payer], recent_blockhash);
-    let result = banks_client.process_transaction(transaction).await;
-
-    assert!(result.is_err());
-}
-
-#[tokio::test]
-async fn validate_signature_with_wrong_message() {
-    let mut rng = thread_rng();
-    let key: [u8; 32] = rng.gen();
-    let priv_key = SecretKey::parse(&key).unwrap();
-    let secp_pubkey = PublicKey::from_secret_key(&priv_key);
-    let eth_pubkey = construct_eth_pubkey(&secp_pubkey);
-
-    let message = vec![5; 20];
-
-    let mut hasher = sha3::Keccak256::new();
-    hasher.update(&message);
-
-    let message_hash = hasher.finalize();
-    let mut message_hash_arr = [0u8; 32];
-    message_hash_arr.copy_from_slice(&message_hash.as_slice());
-    let message = Message::parse(&message_hash_arr);
-    let (signature, recovery_id) = secp256k1::sign(&message, &priv_key);
-    let signature_arr = signature.serialize();
-
-    let signature_param = instruction::Signature {
-        signature: signature_arr,
-        recovery_id: recovery_id.serialize(),
-        message: [7u8; 32],
-    };
+    let mut secp256_program_instruction =
+        secp256k1_instruction::new_secp256k1_instruction(&priv_key, &message);
 
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
@@ -483,18 +377,25 @@ async fn validate_signature_with_wrong_message() {
     .await
     .unwrap();
 
+    let index = rng.gen_range(0..secp256_program_instruction.data.len());
+    secp256_program_instruction.data[index] =
+        secp256_program_instruction.data[index].wrapping_add(1);
+
     let mut transaction = Transaction::new_with_payer(
-        &[instruction::validate_signature(
-            &id(),
-            &valid_signer.pubkey(),
-            &signer_group.pubkey(),
-            signature_param,
-        )
-        .unwrap()],
+        &[
+            secp256_program_instruction.clone(),
+            instruction::validate_signature(
+                &id(),
+                &valid_signer.pubkey(),
+                &signer_group.pubkey(),
+                secp256_program_instruction.data.as_ref(),
+            )
+            .unwrap(),
+        ],
         Some(&payer.pubkey()),
     );
     transaction.sign(&[&payer], recent_blockhash);
-    let result = banks_client.process_transaction(transaction).await;
+    let transaction_error = banks_client.process_transaction(transaction).await;
 
-    assert!(result.is_err());
+    assert!(transaction_error.is_err());
 }

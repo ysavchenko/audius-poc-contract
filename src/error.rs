@@ -31,6 +31,12 @@ pub enum AudiusError {
     /// Signature missing
     #[error("Signature missing")]
     SignatureMissing,
+    /// Signature verification failed
+    #[error("Signature verification failed")]
+    SignatureVerificationFailed,
+    /// Secp256 instruction losing
+    #[error("Secp256 instruction losing")]
+    Secp256InstructionLosing,
 }
 impl From<AudiusError> for ProgramError {
     fn from(e: AudiusError) -> Self {

@@ -1,19 +1,17 @@
 //! Program state processor
 
 use crate::error::AudiusError;
-use crate::instruction::{AudiusInstruction, Signature};
-use crate::state::{SecpSignatureOffsets, SignerGroup, ValidSigner};
+use crate::instruction::AudiusInstruction;
+use crate::state::{SignerGroup, ValidSigner};
 use num_traits::FromPrimitive;
 use solana_program::decode_error::DecodeError;
 use solana_program::program_error::PrintProgramError;
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
-    instruction::Instruction,
     msg,
-    program::invoke,
     pubkey::Pubkey,
-    secp256k1_program,
+    sysvar,
 };
 
 /// Program state handler
@@ -123,15 +121,28 @@ impl Processor {
     /// Process [ValidateSignature]().
     pub fn process_validate_signature(
         accounts: &[AccountInfo],
-        signature: Signature,
+        signature_data: Vec<u8>,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         // initialized valid signer account
         let valid_signer_info = next_account_info(account_info_iter)?;
         // signer group account
         let signer_group_info = next_account_info(account_info_iter)?;
-        // Secp256k1 program
-        let secp256k1_info = next_account_info(account_info_iter)?;
+        // Sysvar Instruction account info
+        let instruction_info = next_account_info(account_info_iter)?;
+        // Index of current instruction in tx
+        let index = sysvar::instructions::load_current_index(&instruction_info.data.borrow());
+
+        if index == 0 {
+            return Err(AudiusError::Secp256InstructionLosing.into());
+        }
+
+        // Instruction data of Secp256 program call
+        let secp_instruction = sysvar::instructions::load_instruction_at(
+            (index - 1) as usize,
+            &instruction_info.data.borrow(),
+        )
+        .unwrap();
 
         let signer_group = SignerGroup::deserialize(&signer_group_info.data.borrow())?;
 
@@ -149,51 +160,9 @@ impl Processor {
             return Err(AudiusError::WrongSignerGroup.into());
         }
 
-        let mut instruction_data = vec![];
-        let data_start = 1 + SecpSignatureOffsets::SIGNATURE_OFFSETS_SERIALIZED_SIZE;
-        instruction_data.resize(
-            data_start
-                + valid_signer.public_key.len()
-                + signature.signature.len()
-                + signature.message.len()
-                + 1,
-            0,
-        );
-        let eth_address_offset = data_start;
-        instruction_data[eth_address_offset..eth_address_offset + valid_signer.public_key.len()]
-            .copy_from_slice(&valid_signer.public_key);
-
-        let signature_offset = data_start + valid_signer.public_key.len();
-        instruction_data[signature_offset..signature_offset + signature.signature.len()]
-            .copy_from_slice(&signature.signature);
-
-        instruction_data[signature_offset + signature.signature.len()] = signature.recovery_id;
-
-        let message_data_offset = signature_offset + signature.signature.len() + 1;
-        instruction_data[message_data_offset..].copy_from_slice(&signature.message);
-
-        let num_signatures = 1;
-        instruction_data[0] = num_signatures;
-        let offsets = SecpSignatureOffsets {
-            signature_offset: signature_offset as u16,
-            signature_instruction_index: 0,
-            eth_address_offset: eth_address_offset as u16,
-            eth_address_instruction_index: 0,
-            message_data_offset: message_data_offset as u16,
-            message_data_size: signature.message.len() as u16,
-            message_instruction_index: 0,
-        };
-
-        let packed_offsets = offsets.pack();
-        instruction_data[1..data_start].copy_from_slice(packed_offsets.as_slice());
-
-        let signature_check_instruction = Instruction {
-            program_id: secp256k1_program::id(),
-            accounts: vec![],
-            data: instruction_data,
-        };
-
-        invoke(&signature_check_instruction, &[secp256k1_info.clone()])?;
+        if signature_data != secp_instruction.data {
+            return Err(AudiusError::SignatureVerificationFailed.into());
+        }
 
         Ok(())
     }
@@ -237,6 +206,8 @@ impl PrintProgramError for AudiusError {
             AudiusError::WrongSignerGroup => msg!("Signer doesnt belong to this group"),
             AudiusError::WrongOwner => msg!("Wrong owner"),
             AudiusError::SignatureMissing => msg!("Signature missing"),
+            AudiusError::SignatureVerificationFailed => msg!("Signature verification failed"),
+            AudiusError::Secp256InstructionLosing => msg!("Secp256 instruction losing"),
         }
     }
 }

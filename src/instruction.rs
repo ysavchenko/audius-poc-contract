@@ -5,7 +5,7 @@ use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     pubkey::Pubkey,
-    secp256k1_program,
+    sysvar,
 };
 use std::mem::size_of;
 
@@ -46,7 +46,7 @@ pub enum AudiusInstruction {
     ///
     ///   0. `[]` Initialized valid signer
     ///   1. `[]` Signer group signer belongs to
-    ValidateSignature(Signature),
+    ValidateSignature(Vec<u8>),
 }
 impl AudiusInstruction {
     /// Unpacks a byte buffer into a [AudiusInstruction]().
@@ -59,10 +59,7 @@ impl AudiusInstruction {
                 Self::InitValidSigner(*eth_pubkey)
             }
             2 => Self::ClearValidSigner,
-            3 => {
-                let signature: &Signature = unpack_reference(rest)?;
-                Self::ValidateSignature(signature.clone())
-            }
+            3 => Self::ValidateSignature(rest.to_vec()),
             _ => return Err(AudiusError::InvalidInstruction.into()),
         })
     }
@@ -80,10 +77,8 @@ impl AudiusInstruction {
             }
             Self::ClearValidSigner => buf[0] = 2,
             Self::ValidateSignature(signature) => {
-                buf[0] = 3;
-                #[allow(clippy::cast_ptr_alignment)]
-                let packed_signature = unsafe { &mut *(&mut buf[1] as *mut u8 as *mut Signature) };
-                *packed_signature = signature.clone();
+                buf = signature.to_vec();
+                buf.insert(0, 3);
             }
         };
         buf
@@ -164,15 +159,15 @@ pub fn validate_signature(
     program_id: &Pubkey,
     valid_signer_account: &Pubkey,
     signer_group: &Pubkey,
-    signature: Signature,
+    signature_data: &[u8],
 ) -> Result<Instruction, ProgramError> {
-    let args = AudiusInstruction::ValidateSignature(signature);
+    let args = AudiusInstruction::ValidateSignature(signature_data.to_vec());
     let data = args.pack();
 
     let accounts = vec![
         AccountMeta::new_readonly(*valid_signer_account, false),
         AccountMeta::new_readonly(*signer_group, false),
-        AccountMeta::new_readonly(secp256k1_program::id(), false),
+        AccountMeta::new_readonly(sysvar::instructions::id(), false),
     ];
     Ok(Instruction {
         program_id: *program_id,
