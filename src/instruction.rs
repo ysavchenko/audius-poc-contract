@@ -5,12 +5,25 @@ use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     pubkey::Pubkey,
+    sysvar,
 };
 use std::mem::size_of;
 
+/// Signature with message to validate
+#[repr(C)]
+#[derive(Clone)]
+pub struct Signature {
+    /// Secp256k1 serialized signature
+    pub signature: [u8; 64],
+    /// Ethereum signature recovery ID
+    pub recovery_id: u8,
+    /// Keccak256 message hash
+    pub message: [u8; 32],
+}
+
 /// Instructions supported by the Audius program
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub enum AudiusInstruction {
     ///   Create new signer group account
     ///
@@ -24,13 +37,16 @@ pub enum AudiusInstruction {
     ///   2. `[s]` SignerGroup's owner
     InitValidSigner([u8; 20]),
     ///   Remove valid signer from the group
-    /// 
+    ///
     ///   0. `[w]` Initialized valid signer to remove
     ///   1. `[]` Signer group to remove from
     ///   2. `[s]` SignerGroup's owner
     ClearValidSigner,
     ///   Validate signature issued by valid signer
-    ValidateSignature,
+    ///
+    ///   0. `[]` Initialized valid signer
+    ///   1. `[]` Signer group signer belongs to
+    ValidateSignature(Vec<u8>),
 }
 impl AudiusInstruction {
     /// Unpacks a byte buffer into a [AudiusInstruction]().
@@ -43,6 +59,7 @@ impl AudiusInstruction {
                 Self::InitValidSigner(*eth_pubkey)
             }
             2 => Self::ClearValidSigner,
+            3 => Self::ValidateSignature(rest.to_vec()),
             _ => return Err(AudiusError::InvalidInstruction.into()),
         })
     }
@@ -59,7 +76,10 @@ impl AudiusInstruction {
                 *packed_pubkey = *eth_pubkey;
             }
             Self::ClearValidSigner => buf[0] = 2,
-            Self::ValidateSignature => buf[0] = 3, // TODO: add parameters
+            Self::ValidateSignature(signature) => {
+                buf = signature.to_vec();
+                buf.insert(0, 3);
+            }
         };
         buf
     }
@@ -116,7 +136,12 @@ pub fn init_valid_signer(
 }
 
 /// Creates `ClearValidSigner` instruction
-pub fn clear_valid_signer(program_id: &Pubkey, valid_signer_account: &Pubkey, signer_group: &Pubkey, groups_owner: &Pubkey) -> Result<Instruction, ProgramError> {
+pub fn clear_valid_signer(
+    program_id: &Pubkey,
+    valid_signer_account: &Pubkey,
+    signer_group: &Pubkey,
+    groups_owner: &Pubkey,
+) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new(*valid_signer_account, false),
         AccountMeta::new_readonly(*signer_group, false),
@@ -126,5 +151,27 @@ pub fn clear_valid_signer(program_id: &Pubkey, valid_signer_account: &Pubkey, si
         program_id: *program_id,
         accounts,
         data: AudiusInstruction::ClearValidSigner.pack(),
+    })
+}
+
+/// Creates `ValidateSignature` instruction
+pub fn validate_signature(
+    program_id: &Pubkey,
+    valid_signer_account: &Pubkey,
+    signer_group: &Pubkey,
+    signature_data: &[u8],
+) -> Result<Instruction, ProgramError> {
+    let args = AudiusInstruction::ValidateSignature(signature_data.to_vec());
+    let data = args.pack();
+
+    let accounts = vec![
+        AccountMeta::new_readonly(*valid_signer_account, false),
+        AccountMeta::new_readonly(*signer_group, false),
+        AccountMeta::new_readonly(sysvar::instructions::id(), false),
+    ];
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
     })
 }

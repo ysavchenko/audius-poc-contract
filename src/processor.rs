@@ -11,6 +11,7 @@ use solana_program::{
     entrypoint::ProgramResult,
     msg,
     pubkey::Pubkey,
+    sysvar,
 };
 
 /// Program state handler
@@ -117,6 +118,55 @@ impl Processor {
         Ok(())
     }
 
+    /// Process [ValidateSignature]().
+    pub fn process_validate_signature(
+        accounts: &[AccountInfo],
+        signature_data: Vec<u8>,
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        // initialized valid signer account
+        let valid_signer_info = next_account_info(account_info_iter)?;
+        // signer group account
+        let signer_group_info = next_account_info(account_info_iter)?;
+        // Sysvar Instruction account info
+        let instruction_info = next_account_info(account_info_iter)?;
+        // Index of current instruction in tx
+        let index = sysvar::instructions::load_current_index(&instruction_info.data.borrow());
+
+        if index == 0 {
+            return Err(AudiusError::Secp256InstructionLosing.into());
+        }
+
+        // Instruction data of Secp256 program call
+        let secp_instruction = sysvar::instructions::load_instruction_at(
+            (index - 1) as usize,
+            &instruction_info.data.borrow(),
+        )
+        .unwrap();
+
+        let signer_group = SignerGroup::deserialize(&signer_group_info.data.borrow())?;
+
+        if !signer_group.is_initialized() {
+            return Err(AudiusError::UninitializedSignerGroup.into());
+        }
+
+        let valid_signer = ValidSigner::deserialize(&valid_signer_info.data.borrow())?;
+
+        if !valid_signer.is_initialized() {
+            return Err(AudiusError::ValidSignerNotInitialized.into());
+        }
+
+        if valid_signer.signer_group != *signer_group_info.key {
+            return Err(AudiusError::WrongSignerGroup.into());
+        }
+
+        if signature_data != secp_instruction.data {
+            return Err(AudiusError::SignatureVerificationFailed.into());
+        }
+
+        Ok(())
+    }
+
     /// Process an [Instruction]().
     pub fn process(_program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = AudiusInstruction::unpack(input)?;
@@ -134,7 +184,10 @@ impl Processor {
                 msg!("Instruction: ClearValidSigner");
                 Self::process_clear_valid_signer(accounts)
             }
-            _ => Err(AudiusError::InvalidInstruction.into()), // TODO: remove when cover all the instructions
+            AudiusInstruction::ValidateSignature(signature) => {
+                msg!("Instruction: ValidateSignature");
+                Self::process_validate_signature(accounts, signature)
+            }
         }
     }
 }
@@ -153,6 +206,8 @@ impl PrintProgramError for AudiusError {
             AudiusError::WrongSignerGroup => msg!("Signer doesnt belong to this group"),
             AudiusError::WrongOwner => msg!("Wrong owner"),
             AudiusError::SignatureMissing => msg!("Signature missing"),
+            AudiusError::SignatureVerificationFailed => msg!("Signature verification failed"),
+            AudiusError::Secp256InstructionLosing => msg!("Secp256 instruction losing"),
         }
     }
 }

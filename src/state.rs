@@ -29,6 +29,25 @@ pub struct ValidSigner {
     pub public_key: [u8; 20],
 }
 
+/// Secp256k1 signature offsets data
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SecpSignatureOffsets {
+    /// Offset of 64+1 bytes
+    pub signature_offset: u16,
+    /// Index of signature instruction in buffer
+    pub signature_instruction_index: u8,
+    /// Offset to eth_address of 20 bytes
+    pub eth_address_offset: u16,
+    /// Index of eth address instruction in buffer
+    pub eth_address_instruction_index: u8,
+    /// Offset to start of message data
+    pub message_data_offset: u16,
+    /// Size of message data
+    pub message_data_size: u16,
+    /// Index on message instruction in buffer
+    pub message_instruction_index: u8,
+}
+
 impl SignerGroup {
     /// Length of SignerGroup when serialized
     pub const LEN: usize = size_of::<SignerGroup>();
@@ -104,6 +123,73 @@ impl ValidSigner {
     /// Check if ValidSigner is initialized
     pub fn is_initialized(&self) -> bool {
         self.version != 0
+    }
+}
+
+impl SecpSignatureOffsets {
+    /// Max value can be hold in one byte
+    pub const MAX_VALUE_ONE_BYTE: u16 = 256;
+
+    /// Size of serialized Secp256k1 signature
+    pub const SIGNATURE_OFFSETS_SERIALIZED_SIZE: usize = 11;
+
+    /// Serialize [SecpSignatureOffsets]().
+    pub fn pack(&self) -> Vec<u8> {
+        let mut packed_offsets = vec![0u8; Self::SIGNATURE_OFFSETS_SERIALIZED_SIZE];
+
+        self.euclidean_division(
+            self.signature_offset,
+            &mut packed_offsets,
+            0 as usize,
+            1 as usize,
+        );
+
+        packed_offsets[2] = self.signature_instruction_index;
+
+        self.euclidean_division(
+            self.eth_address_offset,
+            &mut packed_offsets,
+            3 as usize,
+            4 as usize,
+        );
+
+        packed_offsets[5] = self.eth_address_instruction_index;
+
+        self.euclidean_division(
+            self.message_data_offset,
+            &mut packed_offsets,
+            6 as usize,
+            7 as usize,
+        );
+
+        self.euclidean_division(
+            self.message_data_size,
+            &mut packed_offsets,
+            8 as usize,
+            9 as usize,
+        );
+
+        packed_offsets[10] = self.message_instruction_index;
+
+        packed_offsets
+    }
+
+    fn euclidean_division(
+        &self,
+        dividend: u16,
+        buffer: &mut Vec<u8>,
+        first_index: usize,
+        second_index: usize,
+    ) {
+        if dividend >= Self::MAX_VALUE_ONE_BYTE {
+            let quotient: u8 = (dividend / Self::MAX_VALUE_ONE_BYTE) as u8;
+            let remainder: u8 = (dividend % Self::MAX_VALUE_ONE_BYTE) as u8;
+            buffer[first_index] = remainder;
+            buffer[second_index] = quotient;
+        } else {
+            buffer[first_index] = dividend as u8;
+            buffer[second_index] = 0;
+        }
     }
 }
 

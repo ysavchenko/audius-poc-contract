@@ -1,10 +1,14 @@
 #![cfg(feature = "test-bpf")]
 
 use audius::*;
+use rand::{thread_rng, Rng};
+use secp256k1::{PublicKey, SecretKey};
+use sha3::Digest;
 use solana_program::{hash::Hash, pubkey::Pubkey, system_instruction};
 use solana_program_test::*;
 use solana_sdk::{
     account::Account,
+    secp256k1_instruction,
     signature::{Keypair, Signer},
     transaction::Transaction,
     transport::TransportError,
@@ -30,7 +34,13 @@ async fn setup() -> (BanksClient, Keypair, Hash, Keypair, Keypair) {
     .await
     .unwrap();
 
-    (banks_client, payer, recent_blockhash, signer_group, group_owner)
+    (
+        banks_client,
+        payer,
+        recent_blockhash,
+        signer_group,
+        group_owner,
+    )
 }
 
 async fn create_account(
@@ -66,12 +76,15 @@ async fn get_account(banks_client: &mut BanksClient, pubkey: &Pubkey) -> Account
         .expect("account empty")
 }
 
-async fn process_tx_init_signer_group(signer_group: &Pubkey, group_owner: &Pubkey, payer: &Keypair, recent_blockhash: Hash, banks_client: &mut BanksClient) -> Result<(), TransportError> {
+async fn process_tx_init_signer_group(
+    signer_group: &Pubkey,
+    group_owner: &Pubkey,
+    payer: &Keypair,
+    recent_blockhash: Hash,
+    banks_client: &mut BanksClient,
+) -> Result<(), TransportError> {
     let mut transaction = Transaction::new_with_payer(
-        &[
-            instruction::init_signer_group(&id(), signer_group, group_owner)
-                .unwrap(),
-        ],
+        &[instruction::init_signer_group(&id(), signer_group, group_owner).unwrap()],
         Some(&payer.pubkey()),
     );
     transaction.sign(&[payer], recent_blockhash);
@@ -79,8 +92,15 @@ async fn process_tx_init_signer_group(signer_group: &Pubkey, group_owner: &Pubke
     Ok(())
 }
 
-async fn process_tx_init_valid_signer(valid_signer: &Pubkey, signer_group: &Pubkey, group_owner: &Keypair, payer: &Keypair, recent_blockhash: Hash, banks_client: &mut BanksClient, eth_pub_key: [u8; 20]) -> Result<(), TransportError> {
-    let latest_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+async fn process_tx_init_valid_signer(
+    valid_signer: &Pubkey,
+    signer_group: &Pubkey,
+    group_owner: &Keypair,
+    payer: &Keypair,
+    recent_blockhash: Hash,
+    banks_client: &mut BanksClient,
+    eth_pub_key: [u8; 20],
+) -> Result<(), TransportError> {
     let mut transaction = Transaction::new_with_payer(
         &[instruction::init_valid_signer(
             &id(),
@@ -92,16 +112,31 @@ async fn process_tx_init_valid_signer(valid_signer: &Pubkey, signer_group: &Pubk
         .unwrap()],
         Some(&payer.pubkey()),
     );
-    transaction.sign(&[payer, group_owner], latest_blockhash);
+    transaction.sign(&[payer, group_owner], recent_blockhash);
     banks_client.process_transaction(transaction).await?;
     Ok(())
+}
+
+fn construct_eth_pubkey(pubkey: &PublicKey) -> [u8; 20] {
+    let mut addr = [0u8; 20];
+    addr.copy_from_slice(&sha3::Keccak256::digest(&pubkey.serialize()[1..])[12..]);
+    assert_eq!(addr.len(), 20);
+    addr
 }
 
 #[tokio::test]
 async fn init_signer_group() {
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
-    process_tx_init_signer_group(&signer_group.pubkey(), &group_owner.pubkey(), &payer, recent_blockhash, &mut banks_client).await.unwrap();
+    process_tx_init_signer_group(
+        &signer_group.pubkey(),
+        &group_owner.pubkey(),
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+    )
+    .await
+    .unwrap();
 
     let signer_group_account = get_account(&mut banks_client, &signer_group.pubkey()).await;
 
@@ -119,7 +154,15 @@ async fn init_signer_group() {
 async fn init_valid_signer() {
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
-    process_tx_init_signer_group(&signer_group.pubkey(), &group_owner.pubkey(), &payer, recent_blockhash, &mut banks_client).await.unwrap();
+    process_tx_init_signer_group(
+        &signer_group.pubkey(),
+        &group_owner.pubkey(),
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+    )
+    .await
+    .unwrap();
 
     let valid_signer = Keypair::new();
 
@@ -134,7 +177,17 @@ async fn init_valid_signer() {
     .unwrap();
 
     let eth_pub_key = [1u8; 20];
-    process_tx_init_valid_signer(&valid_signer.pubkey(), &signer_group.pubkey(), &group_owner, &payer, recent_blockhash, &mut banks_client, eth_pub_key).await.unwrap();
+    process_tx_init_valid_signer(
+        &valid_signer.pubkey(),
+        &signer_group.pubkey(),
+        &group_owner,
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+        eth_pub_key,
+    )
+    .await
+    .unwrap();
 
     let valid_signer_account = get_account(&mut banks_client, &valid_signer.pubkey()).await;
 
@@ -153,7 +206,15 @@ async fn init_valid_signer() {
 async fn clear_valid_signer() {
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
-    process_tx_init_signer_group(&signer_group.pubkey(), &group_owner.pubkey(), &payer, recent_blockhash, &mut banks_client).await.unwrap();
+    process_tx_init_signer_group(
+        &signer_group.pubkey(),
+        &group_owner.pubkey(),
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+    )
+    .await
+    .unwrap();
 
     let valid_signer = Keypair::new();
 
@@ -168,7 +229,17 @@ async fn clear_valid_signer() {
     .unwrap();
 
     let eth_pub_key = [1u8; 20];
-    process_tx_init_valid_signer(&valid_signer.pubkey(), &signer_group.pubkey(), &group_owner, &payer, recent_blockhash, &mut banks_client, eth_pub_key).await.unwrap();
+    process_tx_init_valid_signer(
+        &valid_signer.pubkey(),
+        &signer_group.pubkey(),
+        &group_owner,
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+        eth_pub_key,
+    )
+    .await
+    .unwrap();
 
     let mut transaction = Transaction::new_with_payer(
         &[instruction::clear_valid_signer(
@@ -176,7 +247,10 @@ async fn clear_valid_signer() {
             &valid_signer.pubkey(),
             &signer_group.pubkey(),
             &group_owner.pubkey(),
-        ).unwrap()], Some(&payer.pubkey()),);
+        )
+        .unwrap()],
+        Some(&payer.pubkey()),
+    );
     transaction.sign(&[&payer, &group_owner], recent_blockhash);
     banks_client.process_transaction(transaction).await.unwrap();
 
@@ -186,4 +260,142 @@ async fn clear_valid_signer() {
         state::ValidSigner::deserialize(&valid_signer_account.data.as_slice()).unwrap();
 
     assert_eq!(valid_signer_data.is_initialized(), false);
+}
+
+#[tokio::test]
+async fn validate_signature() {
+    let mut rng = thread_rng();
+    let key: [u8; 32] = rng.gen();
+    let priv_key = SecretKey::parse(&key).unwrap();
+    let secp_pubkey = PublicKey::from_secret_key(&priv_key);
+    let eth_pubkey = construct_eth_pubkey(&secp_pubkey);
+
+    let message = [1u8; 29];
+
+    let secp256_program_instruction =
+        secp256k1_instruction::new_secp256k1_instruction(&priv_key, &message);
+
+    let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
+
+    process_tx_init_signer_group(
+        &signer_group.pubkey(),
+        &group_owner.pubkey(),
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+    )
+    .await
+    .unwrap();
+
+    let valid_signer = Keypair::new();
+
+    create_account(
+        &mut banks_client,
+        &payer,
+        &recent_blockhash,
+        &valid_signer,
+        state::ValidSigner::LEN,
+    )
+    .await
+    .unwrap();
+
+    process_tx_init_valid_signer(
+        &valid_signer.pubkey(),
+        &signer_group.pubkey(),
+        &group_owner,
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+        eth_pubkey,
+    )
+    .await
+    .unwrap();
+
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            secp256_program_instruction.clone(),
+            instruction::validate_signature(
+                &id(),
+                &valid_signer.pubkey(),
+                &signer_group.pubkey(),
+                secp256_program_instruction.data.as_ref(),
+            )
+            .unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
+    transaction.sign(&[&payer], recent_blockhash);
+    banks_client.process_transaction(transaction).await.unwrap();
+}
+
+#[tokio::test]
+async fn validate_signature_with_wrong_data() {
+    let mut rng = thread_rng();
+    let key: [u8; 32] = rng.gen();
+    let priv_key = SecretKey::parse(&key).unwrap();
+    let secp_pubkey = PublicKey::from_secret_key(&priv_key);
+    let eth_pubkey = construct_eth_pubkey(&secp_pubkey);
+
+    let message = [1u8; 29];
+
+    let mut secp256_program_instruction =
+        secp256k1_instruction::new_secp256k1_instruction(&priv_key, &message);
+
+    let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
+
+    process_tx_init_signer_group(
+        &signer_group.pubkey(),
+        &group_owner.pubkey(),
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+    )
+    .await
+    .unwrap();
+
+    let valid_signer = Keypair::new();
+
+    create_account(
+        &mut banks_client,
+        &payer,
+        &recent_blockhash,
+        &valid_signer,
+        state::ValidSigner::LEN,
+    )
+    .await
+    .unwrap();
+
+    process_tx_init_valid_signer(
+        &valid_signer.pubkey(),
+        &signer_group.pubkey(),
+        &group_owner,
+        &payer,
+        recent_blockhash,
+        &mut banks_client,
+        eth_pubkey,
+    )
+    .await
+    .unwrap();
+
+    let index = rng.gen_range(0..secp256_program_instruction.data.len());
+    secp256_program_instruction.data[index] =
+        secp256_program_instruction.data[index].wrapping_add(1);
+
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            secp256_program_instruction.clone(),
+            instruction::validate_signature(
+                &id(),
+                &valid_signer.pubkey(),
+                &signer_group.pubkey(),
+                secp256_program_instruction.data.as_ref(),
+            )
+            .unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
+    transaction.sign(&[&payer], recent_blockhash);
+    let transaction_error = banks_client.process_transaction(transaction).await;
+
+    assert!(transaction_error.is_err());
 }
