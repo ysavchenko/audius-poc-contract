@@ -130,6 +130,8 @@ impl Processor {
         let valid_signer_info = next_account_info(account_info_iter)?;
         // signer group account
         let signer_group_info = next_account_info(account_info_iter)?;
+        // Secp256k1 program
+        let secp256k1_info = next_account_info(account_info_iter)?;
 
         let signer_group = SignerGroup::deserialize(&signer_group_info.data.borrow())?;
 
@@ -191,7 +193,7 @@ impl Processor {
             data: instruction_data,
         };
 
-        invoke(&signature_check_instruction, &[])?;
+        invoke(&signature_check_instruction, &[secp256k1_info.clone()])?;
 
         Ok(())
     }

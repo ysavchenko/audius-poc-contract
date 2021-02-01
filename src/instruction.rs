@@ -5,15 +5,16 @@ use solana_program::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     pubkey::Pubkey,
+    secp256k1_program,
 };
 use std::mem::size_of;
 
 /// Signature with message to validate
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub struct Signature {
     /// Secp256k1 serialized signature
-    pub signature: Vec<u8>,
+    pub signature: [u8; 64],
     /// Ethereum signature recovery ID
     pub recovery_id: u8,
     /// Keccak256 message hash
@@ -22,7 +23,7 @@ pub struct Signature {
 
 /// Instructions supported by the Audius program
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub enum AudiusInstruction {
     ///   Create new signer group account
     ///
@@ -171,6 +172,7 @@ pub fn validate_signature(
     let accounts = vec![
         AccountMeta::new_readonly(*valid_signer_account, false),
         AccountMeta::new_readonly(*signer_group, false),
+        AccountMeta::new_readonly(secp256k1_program::id(), false),
     ];
     Ok(Instruction {
         program_id: *program_id,
