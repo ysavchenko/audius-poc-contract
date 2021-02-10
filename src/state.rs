@@ -25,8 +25,8 @@ pub struct ValidSigner {
     pub version: u8,
     /// SignerGroup this ValidSigner belongs to
     pub signer_group: Pubkey,
-    /// Ethereum public key used for signing messages
-    pub public_key: [u8; 20],
+    /// Ethereum address of signer
+    pub eth_address: [u8; SecpSignatureOffsets::ETH_ADDRESS_SIZE],
 }
 
 /// Secp256k1 signature offsets data
@@ -133,6 +133,12 @@ impl SecpSignatureOffsets {
     /// Size of serialized Secp256k1 signature
     pub const SIGNATURE_OFFSETS_SERIALIZED_SIZE: usize = 11;
 
+    /// Size of Secp256k1 signature
+    pub const SECP_SIGNATURE_SIZE: usize = 64;
+
+    /// Ethereum public key size
+    pub const ETH_ADDRESS_SIZE: usize = 20;
+
     /// Serialize [SecpSignatureOffsets]().
     pub fn pack(&self) -> Vec<u8> {
         let mut packed_offsets = vec![0u8; Self::SIGNATURE_OFFSETS_SERIALIZED_SIZE];
@@ -174,6 +180,19 @@ impl SecpSignatureOffsets {
         packed_offsets
     }
 
+    /// Deserialize [SecpSignatureOffsets]().
+    pub fn unpack(data: Vec<u8>) -> Self {
+        SecpSignatureOffsets {
+            signature_offset: Self::parse_two_bytes(data[0], data[1]),
+            signature_instruction_index: data[2],
+            eth_address_offset: Self::parse_two_bytes(data[3], data[4]),
+            eth_address_instruction_index: data[5],
+            message_data_offset: Self::parse_two_bytes(data[6], data[7]),
+            message_data_size: Self::parse_two_bytes(data[8], data[9]),
+            message_instruction_index: data[10],
+        }
+    }
+
     fn euclidean_division(
         &self,
         dividend: u16,
@@ -189,6 +208,14 @@ impl SecpSignatureOffsets {
         } else {
             buffer[first_index] = dividend as u8;
             buffer[second_index] = 0;
+        }
+    }
+
+    fn parse_two_bytes(first_byte: u8, second_byte: u8) -> u16 {
+        if second_byte != 0 {
+            return (Self::MAX_VALUE_ONE_BYTE * (second_byte as u16)) + first_byte as u16;
+        } else {
+            return first_byte as u16;
         }
     }
 }
@@ -219,7 +246,7 @@ mod test {
         let valid_signer = ValidSigner {
             version: 1,
             signer_group: Pubkey::new_from_array([1; 32]),
-            public_key: [7; 20],
+            eth_address: [7; SecpSignatureOffsets::ETH_ADDRESS_SIZE],
         };
 
         let mut buffer: [u8; ValidSigner::LEN] = [0; ValidSigner::LEN];
@@ -230,5 +257,24 @@ mod test {
         assert_eq!(valid_signer, deserialized);
 
         assert_eq!(valid_signer.is_initialized(), true);
+    }
+
+    #[test]
+    fn test_offsets_pack_unpack() {
+        let offsets = SecpSignatureOffsets {
+            signature_offset: 345,
+            signature_instruction_index: 43,
+            eth_address_offset: 278,
+            eth_address_instruction_index: 7,
+            message_data_offset: 783,
+            message_data_size: 543,
+            message_instruction_index: 10,
+        };
+
+        let packed = offsets.pack();
+
+        let unpacked = SecpSignatureOffsets::unpack(packed);
+
+        assert_eq!(offsets, unpacked);
     }
 }
