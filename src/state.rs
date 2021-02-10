@@ -141,41 +141,21 @@ impl SecpSignatureOffsets {
 
     /// Serialize [SecpSignatureOffsets]().
     pub fn pack(&self) -> Vec<u8> {
-        let mut packed_offsets = vec![0u8; Self::SIGNATURE_OFFSETS_SERIALIZED_SIZE];
+        let mut packed_offsets = vec![];
 
-        self.euclidean_division(
-            self.signature_offset,
-            &mut packed_offsets,
-            0 as usize,
-            1 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.signature_offset.to_le_bytes());
 
-        packed_offsets[2] = self.signature_instruction_index;
+        packed_offsets.push(self.signature_instruction_index);
 
-        self.euclidean_division(
-            self.eth_address_offset,
-            &mut packed_offsets,
-            3 as usize,
-            4 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.eth_address_offset.to_le_bytes());
 
-        packed_offsets[5] = self.eth_address_instruction_index;
+        packed_offsets.push(self.eth_address_instruction_index);
 
-        self.euclidean_division(
-            self.message_data_offset,
-            &mut packed_offsets,
-            6 as usize,
-            7 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.message_data_offset.to_le_bytes());
 
-        self.euclidean_division(
-            self.message_data_size,
-            &mut packed_offsets,
-            8 as usize,
-            9 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.message_data_size.to_le_bytes());
 
-        packed_offsets[10] = self.message_instruction_index;
+        packed_offsets.push(self.message_instruction_index);
 
         packed_offsets
     }
@@ -183,39 +163,13 @@ impl SecpSignatureOffsets {
     /// Deserialize [SecpSignatureOffsets]().
     pub fn unpack(data: Vec<u8>) -> Self {
         SecpSignatureOffsets {
-            signature_offset: Self::parse_two_bytes(data[0], data[1]),
+            signature_offset: u16::from_le_bytes([data[0], data[1]]),
             signature_instruction_index: data[2],
-            eth_address_offset: Self::parse_two_bytes(data[3], data[4]),
+            eth_address_offset: u16::from_le_bytes([data[3], data[4]]),
             eth_address_instruction_index: data[5],
-            message_data_offset: Self::parse_two_bytes(data[6], data[7]),
-            message_data_size: Self::parse_two_bytes(data[8], data[9]),
+            message_data_offset: u16::from_le_bytes([data[6], data[7]]),
+            message_data_size: u16::from_le_bytes([data[8], data[9]]),
             message_instruction_index: data[10],
-        }
-    }
-
-    fn euclidean_division(
-        &self,
-        dividend: u16,
-        buffer: &mut Vec<u8>,
-        first_index: usize,
-        second_index: usize,
-    ) {
-        if dividend >= Self::MAX_VALUE_ONE_BYTE {
-            let quotient: u8 = (dividend / Self::MAX_VALUE_ONE_BYTE) as u8;
-            let remainder: u8 = (dividend % Self::MAX_VALUE_ONE_BYTE) as u8;
-            buffer[first_index] = remainder;
-            buffer[second_index] = quotient;
-        } else {
-            buffer[first_index] = dividend as u8;
-            buffer[second_index] = 0;
-        }
-    }
-
-    fn parse_two_bytes(first_byte: u8, second_byte: u8) -> u16 {
-        if second_byte != 0 {
-            return (Self::MAX_VALUE_ONE_BYTE * (second_byte as u16)) + first_byte as u16;
-        } else {
-            return first_byte as u16;
         }
     }
 }
