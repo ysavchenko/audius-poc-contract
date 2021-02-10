@@ -25,8 +25,8 @@ pub struct ValidSigner {
     pub version: u8,
     /// SignerGroup this ValidSigner belongs to
     pub signer_group: Pubkey,
-    /// Ethereum public key used for signing messages
-    pub public_key: [u8; 20],
+    /// Ethereum address of signer
+    pub eth_address: [u8; SecpSignatureOffsets::ETH_ADDRESS_SIZE],
 }
 
 /// Secp256k1 signature offsets data
@@ -133,62 +133,43 @@ impl SecpSignatureOffsets {
     /// Size of serialized Secp256k1 signature
     pub const SIGNATURE_OFFSETS_SERIALIZED_SIZE: usize = 11;
 
+    /// Size of Secp256k1 signature
+    pub const SECP_SIGNATURE_SIZE: usize = 64;
+
+    /// Ethereum public key size
+    pub const ETH_ADDRESS_SIZE: usize = 20;
+
     /// Serialize [SecpSignatureOffsets]().
     pub fn pack(&self) -> Vec<u8> {
-        let mut packed_offsets = vec![0u8; Self::SIGNATURE_OFFSETS_SERIALIZED_SIZE];
+        let mut packed_offsets = vec![];
 
-        self.euclidean_division(
-            self.signature_offset,
-            &mut packed_offsets,
-            0 as usize,
-            1 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.signature_offset.to_le_bytes());
 
-        packed_offsets[2] = self.signature_instruction_index;
+        packed_offsets.push(self.signature_instruction_index);
 
-        self.euclidean_division(
-            self.eth_address_offset,
-            &mut packed_offsets,
-            3 as usize,
-            4 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.eth_address_offset.to_le_bytes());
 
-        packed_offsets[5] = self.eth_address_instruction_index;
+        packed_offsets.push(self.eth_address_instruction_index);
 
-        self.euclidean_division(
-            self.message_data_offset,
-            &mut packed_offsets,
-            6 as usize,
-            7 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.message_data_offset.to_le_bytes());
 
-        self.euclidean_division(
-            self.message_data_size,
-            &mut packed_offsets,
-            8 as usize,
-            9 as usize,
-        );
+        packed_offsets.extend_from_slice(&self.message_data_size.to_le_bytes());
 
-        packed_offsets[10] = self.message_instruction_index;
+        packed_offsets.push(self.message_instruction_index);
 
         packed_offsets
     }
 
-    fn euclidean_division(
-        &self,
-        dividend: u16,
-        buffer: &mut Vec<u8>,
-        first_index: usize,
-        second_index: usize,
-    ) {
-        if dividend >= Self::MAX_VALUE_ONE_BYTE {
-            let quotient: u8 = (dividend / Self::MAX_VALUE_ONE_BYTE) as u8;
-            let remainder: u8 = (dividend % Self::MAX_VALUE_ONE_BYTE) as u8;
-            buffer[first_index] = remainder;
-            buffer[second_index] = quotient;
-        } else {
-            buffer[first_index] = dividend as u8;
-            buffer[second_index] = 0;
+    /// Deserialize [SecpSignatureOffsets]().
+    pub fn unpack(data: Vec<u8>) -> Self {
+        SecpSignatureOffsets {
+            signature_offset: u16::from_le_bytes([data[0], data[1]]),
+            signature_instruction_index: data[2],
+            eth_address_offset: u16::from_le_bytes([data[3], data[4]]),
+            eth_address_instruction_index: data[5],
+            message_data_offset: u16::from_le_bytes([data[6], data[7]]),
+            message_data_size: u16::from_le_bytes([data[8], data[9]]),
+            message_instruction_index: data[10],
         }
     }
 }
@@ -219,7 +200,7 @@ mod test {
         let valid_signer = ValidSigner {
             version: 1,
             signer_group: Pubkey::new_from_array([1; 32]),
-            public_key: [7; 20],
+            eth_address: [7; SecpSignatureOffsets::ETH_ADDRESS_SIZE],
         };
 
         let mut buffer: [u8; ValidSigner::LEN] = [0; ValidSigner::LEN];
@@ -230,5 +211,24 @@ mod test {
         assert_eq!(valid_signer, deserialized);
 
         assert_eq!(valid_signer.is_initialized(), true);
+    }
+
+    #[test]
+    fn test_offsets_pack_unpack() {
+        let offsets = SecpSignatureOffsets {
+            signature_offset: 345,
+            signature_instruction_index: 43,
+            eth_address_offset: 278,
+            eth_address_instruction_index: 7,
+            message_data_offset: 783,
+            message_data_size: 543,
+            message_instruction_index: 10,
+        };
+
+        let packed = offsets.pack();
+
+        let unpacked = SecpSignatureOffsets::unpack(packed);
+
+        assert_eq!(offsets, unpacked);
     }
 }

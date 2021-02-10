@@ -1,8 +1,8 @@
 //! Program state processor
 
 use crate::error::AudiusError;
-use crate::instruction::AudiusInstruction;
-use crate::state::{SignerGroup, ValidSigner};
+use crate::instruction::{AudiusInstruction, SignatureData};
+use crate::state::{SecpSignatureOffsets, SignerGroup, ValidSigner};
 use num_traits::FromPrimitive;
 use solana_program::decode_error::DecodeError;
 use solana_program::program_error::PrintProgramError;
@@ -50,7 +50,7 @@ impl Processor {
     /// Process [InitValidSigner]().
     pub fn process_init_valid_signer(
         accounts: &[AccountInfo],
-        eth_pubkey: [u8; 20],
+        eth_address: [u8; SecpSignatureOffsets::ETH_ADDRESS_SIZE],
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         // uninitialized valid signer account
@@ -78,7 +78,7 @@ impl Processor {
 
         valid_signer.version = Self::VALID_SIGNER_VERSION;
         valid_signer.signer_group = *signer_group_info.key;
-        valid_signer.public_key = eth_pubkey;
+        valid_signer.eth_address = eth_address;
 
         valid_signer.serialize(&mut valid_signer_info.data.borrow_mut())?;
         Ok(())
@@ -121,7 +121,7 @@ impl Processor {
     /// Process [ValidateSignature]().
     pub fn process_validate_signature(
         accounts: &[AccountInfo],
-        signature_data: Vec<u8>,
+        signature_data: SignatureData,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         // initialized valid signer account
@@ -160,7 +160,47 @@ impl Processor {
             return Err(AudiusError::WrongSignerGroup.into());
         }
 
-        if signature_data != secp_instruction.data {
+        let mut instruction_data = vec![];
+        let data_start = 1 + SecpSignatureOffsets::SIGNATURE_OFFSETS_SERIALIZED_SIZE;
+        instruction_data.resize(
+            data_start
+                + SecpSignatureOffsets::ETH_ADDRESS_SIZE
+                + SecpSignatureOffsets::SECP_SIGNATURE_SIZE
+                + signature_data.message.len()
+                + 1,
+            0,
+        );
+        let eth_address_offset = data_start;
+        instruction_data
+            [eth_address_offset..eth_address_offset + SecpSignatureOffsets::ETH_ADDRESS_SIZE]
+            .copy_from_slice(&valid_signer.eth_address);
+
+        let signature_offset = data_start + SecpSignatureOffsets::ETH_ADDRESS_SIZE;
+        instruction_data
+            [signature_offset..signature_offset + SecpSignatureOffsets::SECP_SIGNATURE_SIZE]
+            .copy_from_slice(&signature_data.signature);
+
+        instruction_data[signature_offset + SecpSignatureOffsets::SECP_SIGNATURE_SIZE] =
+            signature_data.recovery_id;
+
+        let message_data_offset = signature_offset + SecpSignatureOffsets::SECP_SIGNATURE_SIZE + 1;
+        instruction_data[message_data_offset..].copy_from_slice(&signature_data.message);
+
+        let num_signatures = 1;
+        instruction_data[0] = num_signatures;
+        let offsets = SecpSignatureOffsets {
+            signature_offset: signature_offset as u16,
+            signature_instruction_index: 0,
+            eth_address_offset: eth_address_offset as u16,
+            eth_address_instruction_index: 0,
+            message_data_offset: message_data_offset as u16,
+            message_data_size: signature_data.message.len() as u16,
+            message_instruction_index: 0,
+        };
+        let packed_offsets = offsets.pack();
+        instruction_data[1..data_start].copy_from_slice(packed_offsets.as_slice());
+
+        if instruction_data != secp_instruction.data {
             return Err(AudiusError::SignatureVerificationFailed.into());
         }
 

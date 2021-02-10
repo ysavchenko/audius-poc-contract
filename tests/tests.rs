@@ -99,7 +99,7 @@ async fn process_tx_init_valid_signer(
     payer: &Keypair,
     recent_blockhash: Hash,
     banks_client: &mut BanksClient,
-    eth_pub_key: [u8; 20],
+    eth_address: [u8; state::SecpSignatureOffsets::ETH_ADDRESS_SIZE],
 ) -> Result<(), TransportError> {
     let mut transaction = Transaction::new_with_payer(
         &[instruction::init_valid_signer(
@@ -107,7 +107,7 @@ async fn process_tx_init_valid_signer(
             valid_signer,
             signer_group,
             &group_owner.pubkey(),
-            eth_pub_key,
+            eth_address,
         )
         .unwrap()],
         Some(&payer.pubkey()),
@@ -117,10 +117,12 @@ async fn process_tx_init_valid_signer(
     Ok(())
 }
 
-fn construct_eth_pubkey(pubkey: &PublicKey) -> [u8; 20] {
-    let mut addr = [0u8; 20];
+fn construct_eth_address(
+    pubkey: &PublicKey,
+) -> [u8; state::SecpSignatureOffsets::ETH_ADDRESS_SIZE] {
+    let mut addr = [0u8; state::SecpSignatureOffsets::ETH_ADDRESS_SIZE];
     addr.copy_from_slice(&sha3::Keccak256::digest(&pubkey.serialize()[1..])[12..]);
-    assert_eq!(addr.len(), 20);
+    assert_eq!(addr.len(), state::SecpSignatureOffsets::ETH_ADDRESS_SIZE);
     addr
 }
 
@@ -176,7 +178,7 @@ async fn init_valid_signer() {
     .await
     .unwrap();
 
-    let eth_pub_key = [1u8; 20];
+    let eth_address = [1u8; state::SecpSignatureOffsets::ETH_ADDRESS_SIZE];
     process_tx_init_valid_signer(
         &valid_signer.pubkey(),
         &signer_group.pubkey(),
@@ -184,7 +186,7 @@ async fn init_valid_signer() {
         &payer,
         recent_blockhash,
         &mut banks_client,
-        eth_pub_key,
+        eth_address,
     )
     .await
     .unwrap();
@@ -198,7 +200,7 @@ async fn init_valid_signer() {
         state::ValidSigner::deserialize(&valid_signer_account.data.as_slice()).unwrap();
 
     assert!(valid_signer_data.is_initialized());
-    assert_eq!(valid_signer_data.public_key, eth_pub_key);
+    assert_eq!(valid_signer_data.eth_address, eth_address);
     assert_eq!(valid_signer_data.signer_group, signer_group.pubkey());
 }
 
@@ -228,7 +230,7 @@ async fn clear_valid_signer() {
     .await
     .unwrap();
 
-    let eth_pub_key = [1u8; 20];
+    let eth_address = [1u8; state::SecpSignatureOffsets::ETH_ADDRESS_SIZE];
     process_tx_init_valid_signer(
         &valid_signer.pubkey(),
         &signer_group.pubkey(),
@@ -236,7 +238,7 @@ async fn clear_valid_signer() {
         &payer,
         recent_blockhash,
         &mut banks_client,
-        eth_pub_key,
+        eth_address,
     )
     .await
     .unwrap();
@@ -268,12 +270,33 @@ async fn validate_signature() {
     let key: [u8; 32] = rng.gen();
     let priv_key = SecretKey::parse(&key).unwrap();
     let secp_pubkey = PublicKey::from_secret_key(&priv_key);
-    let eth_pubkey = construct_eth_pubkey(&secp_pubkey);
+    let eth_address = construct_eth_address(&secp_pubkey);
 
-    let message = [1u8; 29];
+    let message = [8u8; 30];
 
     let secp256_program_instruction =
         secp256k1_instruction::new_secp256k1_instruction(&priv_key, &message);
+
+    let start = 1;
+    let end = start + state::SecpSignatureOffsets::SIGNATURE_OFFSETS_SERIALIZED_SIZE;
+
+    let offsets =
+        state::SecpSignatureOffsets::unpack(secp256_program_instruction.data[start..end].to_vec());
+
+    let sig_start = offsets.signature_offset as usize;
+    let sig_end = sig_start + state::SecpSignatureOffsets::SECP_SIGNATURE_SIZE;
+
+    let mut signature: [u8; state::SecpSignatureOffsets::SECP_SIGNATURE_SIZE] =
+        [0u8; state::SecpSignatureOffsets::SECP_SIGNATURE_SIZE];
+    signature.copy_from_slice(&secp256_program_instruction.data[sig_start..sig_end]);
+
+    let recovery_id = secp256_program_instruction.data[sig_end];
+
+    let signature_data = instruction::SignatureData {
+        signature,
+        recovery_id,
+        message: message.to_vec(),
+    };
 
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
@@ -306,19 +329,19 @@ async fn validate_signature() {
         &payer,
         recent_blockhash,
         &mut banks_client,
-        eth_pubkey,
+        eth_address,
     )
     .await
     .unwrap();
 
     let mut transaction = Transaction::new_with_payer(
         &[
-            secp256_program_instruction.clone(),
+            secp256_program_instruction,
             instruction::validate_signature(
                 &id(),
                 &valid_signer.pubkey(),
                 &signer_group.pubkey(),
-                secp256_program_instruction.data.as_ref(),
+                signature_data,
             )
             .unwrap(),
         ],
@@ -334,12 +357,32 @@ async fn validate_signature_with_wrong_data() {
     let key: [u8; 32] = rng.gen();
     let priv_key = SecretKey::parse(&key).unwrap();
     let secp_pubkey = PublicKey::from_secret_key(&priv_key);
-    let eth_pubkey = construct_eth_pubkey(&secp_pubkey);
+    let eth_address = construct_eth_address(&secp_pubkey);
 
     let message = [1u8; 29];
 
-    let mut secp256_program_instruction =
+    let secp256_program_instruction =
         secp256k1_instruction::new_secp256k1_instruction(&priv_key, &message);
+
+    let start = 1;
+    let end = start + state::SecpSignatureOffsets::SIGNATURE_OFFSETS_SERIALIZED_SIZE;
+
+    let offsets =
+        state::SecpSignatureOffsets::unpack(secp256_program_instruction.data[start..end].to_vec());
+
+    let sig_start = offsets.signature_offset as usize;
+    let sig_end = sig_start + state::SecpSignatureOffsets::SECP_SIGNATURE_SIZE;
+
+    let signature: [u8; state::SecpSignatureOffsets::SECP_SIGNATURE_SIZE] =
+        [8u8; state::SecpSignatureOffsets::SECP_SIGNATURE_SIZE];
+
+    let recovery_id = secp256_program_instruction.data[sig_end];
+
+    let signature_data = instruction::SignatureData {
+        signature,
+        recovery_id,
+        message: message.to_vec(),
+    };
 
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
@@ -372,23 +415,19 @@ async fn validate_signature_with_wrong_data() {
         &payer,
         recent_blockhash,
         &mut banks_client,
-        eth_pubkey,
+        eth_address,
     )
     .await
     .unwrap();
 
-    let index = rng.gen_range(0..secp256_program_instruction.data.len());
-    secp256_program_instruction.data[index] =
-        secp256_program_instruction.data[index].wrapping_add(1);
-
     let mut transaction = Transaction::new_with_payer(
         &[
-            secp256_program_instruction.clone(),
+            secp256_program_instruction,
             instruction::validate_signature(
                 &id(),
                 &valid_signer.pubkey(),
                 &signer_group.pubkey(),
-                secp256_program_instruction.data.as_ref(),
+                signature_data,
             )
             .unwrap(),
         ],
