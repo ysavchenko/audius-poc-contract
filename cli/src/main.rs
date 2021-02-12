@@ -22,6 +22,7 @@ use solana_program::pubkey::Pubkey;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     native_token::lamports_to_sol,
+    secp256k1_instruction,
     signature::{Keypair, Signer},
     system_instruction,
     transaction::Transaction,
@@ -92,9 +93,15 @@ fn command_create_signer_group(config: &Config) -> CommandResult {
     );
 
     let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash()?;
-    check_fee_payer_balance(config, fee_calculator.calculate_fee(&transaction.message()))?;
+    check_fee_payer_balance(
+        config,
+        fee_calculator.calculate_fee(&transaction.message()) + signer_group_account_balance,
+    )?;
 
-    transaction.sign(&[config.fee_payer.as_ref()], recent_blockhash);
+    transaction.sign(
+        &[config.fee_payer.as_ref(), &signer_group],
+        recent_blockhash,
+    );
     Ok(Some(transaction))
 }
 
@@ -137,10 +144,17 @@ fn command_create_valid_signer(
     );
 
     let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash()?;
-    check_fee_payer_balance(config, fee_calculator.calculate_fee(&transaction.message()))?;
+    check_fee_payer_balance(
+        config,
+        fee_calculator.calculate_fee(&transaction.message()) + valid_signer_account_balance,
+    )?;
 
     transaction.sign(
-        &[config.fee_payer.as_ref(), config.owner.as_ref()],
+        &[
+            config.fee_payer.as_ref(),
+            config.owner.as_ref(),
+            &valid_signer,
+        ],
         recent_blockhash,
     );
     Ok(Some(transaction))
@@ -185,31 +199,43 @@ fn command_send_message(
     let decoded_secret =
         <[u8; 32]>::from_hex(secret_key).expect("Secp256k1 secret key decoding failed");
     let private_key = SecretKey::parse(&decoded_secret).unwrap();
-
     let message = message.as_bytes().to_vec();
-    let mut hasher = Keccak256::new();
-    hasher.update(&message);
-    let message_hash = hasher.finalize();
-    let mut message_hash_arr = [0u8; 32];
-    message_hash_arr.copy_from_slice(&message_hash.as_slice());
-    let message_struct = secp256k1::Message::parse(&message_hash_arr);
-    let (signature, recovery_id) = secp256k1::sign(&message_struct, &private_key);
-    let signature_arr = signature.serialize();
+
+    let secp256_program_instruction =
+        secp256k1_instruction::new_secp256k1_instruction(&private_key, &message);
+
+    let start = 1;
+    let end = start + SecpSignatureOffsets::SIGNATURE_OFFSETS_SERIALIZED_SIZE;
+
+    let offsets =
+        SecpSignatureOffsets::unpack(secp256_program_instruction.data[start..end].to_vec());
+
+    let sig_start = offsets.signature_offset as usize;
+    let sig_end = sig_start + SecpSignatureOffsets::SECP_SIGNATURE_SIZE;
+
+    let mut signature: [u8; SecpSignatureOffsets::SECP_SIGNATURE_SIZE] =
+        [0u8; SecpSignatureOffsets::SECP_SIGNATURE_SIZE];
+    signature.copy_from_slice(&secp256_program_instruction.data[sig_start..sig_end]);
+
+    let recovery_id = secp256_program_instruction.data[sig_end];
 
     let signature_data = SignatureData {
-        signature: signature_arr,
-        recovery_id: recovery_id.serialize(),
-        message,
+        signature,
+        recovery_id,
+        message: message.to_vec(),
     };
 
     let mut transaction = Transaction::new_with_payer(
-        &[validate_signature(
-            &audius::id(),
-            valid_signer,
-            &valid_signer_data.signer_group,
-            signature_data,
-        )
-        .unwrap()],
+        &[
+            secp256_program_instruction,
+            validate_signature(
+                &audius::id(),
+                valid_signer,
+                &valid_signer_data.signer_group,
+                signature_data,
+            )
+            .unwrap(),
+        ],
         Some(&config.fee_payer.pubkey()),
     );
 
@@ -341,7 +367,7 @@ fn main() {
                         .value_name("MESSAGE")
                         .takes_value(true)
                         .required(true)
-                        .help("Signed message."),
+                        .help("Message to sign and send."),
                 ),
         )
         .get_matches();
