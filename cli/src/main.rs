@@ -2,7 +2,7 @@ use audius::{
     instruction::{
         clear_valid_signer, init_signer_group, init_valid_signer, validate_signature, SignatureData,
     },
-    state::SecpSignatureOffsets,
+    state::{SecpSignatureOffsets, SignerGroup, ValidSigner},
 };
 use clap::{
     crate_description, crate_name, crate_version, value_t, value_t_or_exit, App, AppSettings, Arg,
@@ -10,15 +10,20 @@ use clap::{
 };
 use hex;
 use hex::FromHex;
+use secp256k1::SecretKey;
+use sha3::{Digest, Keccak256};
 use solana_clap_utils::{
     input_parsers::pubkey_of,
-    input_validators::{is_keypair, is_parsable, is_pubkey, is_url},
+    input_validators::{is_keypair, is_pubkey, is_url},
     keypair::signer_from_path,
 };
 use solana_client::rpc_client::RpcClient;
 use solana_program::pubkey::Pubkey;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, native_token::lamports_to_sol, signature::Signer,
+    commitment_config::CommitmentConfig,
+    native_token::lamports_to_sol,
+    signature::{Keypair, Signer},
+    system_instruction,
     transaction::Transaction,
 };
 use std::process::exit;
@@ -57,9 +62,32 @@ fn check_fee_payer_balance(config: &Config, required_balance: u64) -> Result<(),
     }
 }
 
-fn command_init_signer_group(config: &Config, signer_group: &Pubkey) -> CommandResult {
+fn command_create_signer_group(config: &Config) -> CommandResult {
+    let signer_group = Keypair::new();
+    println!(
+        "Creating new signer group account {}",
+        signer_group.pubkey()
+    );
+
+    let signer_group_account_balance = config
+        .rpc_client
+        .get_minimum_balance_for_rent_exemption(SignerGroup::LEN)?;
     let mut transaction = Transaction::new_with_payer(
-        &[init_signer_group(&audius::id(), signer_group, &config.owner.pubkey()).unwrap()],
+        &[
+            system_instruction::create_account(
+                &config.fee_payer.pubkey(),
+                &signer_group.pubkey(),
+                signer_group_account_balance,
+                SignerGroup::LEN as u64,
+                &audius::id(),
+            ),
+            init_signer_group(
+                &audius::id(),
+                &signer_group.pubkey(),
+                &config.owner.pubkey(),
+            )
+            .unwrap(),
+        ],
         Some(&config.fee_payer.pubkey()),
     );
 
@@ -70,24 +98,41 @@ fn command_init_signer_group(config: &Config, signer_group: &Pubkey) -> CommandR
     Ok(Some(transaction))
 }
 
-fn command_init_valid_signer(
+fn command_create_valid_signer(
     config: &Config,
-    valid_signer: &Pubkey,
     signer_group: &Pubkey,
     eth_address: String,
 ) -> CommandResult {
+    let valid_signer = Keypair::new();
+    println!(
+        "Creating new valid signer account {}",
+        valid_signer.pubkey()
+    );
+
     let decoded_address = <[u8; SecpSignatureOffsets::ETH_ADDRESS_SIZE]>::from_hex(eth_address)
         .expect("Ethereum address decoding failed");
 
+    let valid_signer_account_balance = config
+        .rpc_client
+        .get_minimum_balance_for_rent_exemption(ValidSigner::LEN)?;
     let mut transaction = Transaction::new_with_payer(
-        &[init_valid_signer(
-            &audius::id(),
-            valid_signer,
-            signer_group,
-            &config.owner.pubkey(),
-            decoded_address,
-        )
-        .unwrap()],
+        &[
+            system_instruction::create_account(
+                &config.fee_payer.pubkey(),
+                &valid_signer.pubkey(),
+                valid_signer_account_balance,
+                ValidSigner::LEN as u64,
+                &audius::id(),
+            ),
+            init_valid_signer(
+                &audius::id(),
+                &valid_signer.pubkey(),
+                signer_group,
+                &config.owner.pubkey(),
+                decoded_address,
+            )
+            .unwrap(),
+        ],
         Some(&config.fee_payer.pubkey()),
     );
 
@@ -101,16 +146,16 @@ fn command_init_valid_signer(
     Ok(Some(transaction))
 }
 
-fn command_clear_valid_signer(
-    config: &Config,
-    valid_signer: &Pubkey,
-    signer_group: &Pubkey,
-) -> CommandResult {
+fn command_clear_valid_signer(config: &Config, valid_signer: &Pubkey) -> CommandResult {
+    // Get valid signer data
+    let valid_signer_data = config.rpc_client.get_account_data(valid_signer)?;
+    let valid_signer_data = ValidSigner::deserialize(valid_signer_data.as_slice()).unwrap();
+
     let mut transaction = Transaction::new_with_payer(
         &[clear_valid_signer(
             &audius::id(),
             valid_signer,
-            signer_group,
+            &valid_signer_data.signer_group,
             &config.owner.pubkey(),
         )
         .unwrap()],
@@ -127,25 +172,44 @@ fn command_clear_valid_signer(
     Ok(Some(transaction))
 }
 
-fn command_validate_signature(
+fn command_send_message(
     config: &Config,
     valid_signer: &Pubkey,
-    signer_group: &Pubkey,
-    signature: String,
-    recovery_id: u8,
+    secret_key: String,
     message: String,
 ) -> CommandResult {
-    let decoded_signature = <[u8; SecpSignatureOffsets::SECP_SIGNATURE_SIZE]>::from_hex(signature)
-        .expect("Secp256k1 signature decoding failed");
+    // Get valid signer data
+    let valid_signer_data = config.rpc_client.get_account_data(valid_signer)?;
+    let valid_signer_data = ValidSigner::deserialize(valid_signer_data.as_slice()).unwrap();
+
+    let decoded_secret =
+        <[u8; 32]>::from_hex(secret_key).expect("Secp256k1 secret key decoding failed");
+    let private_key = SecretKey::parse(&decoded_secret).unwrap();
+
+    let message = message.as_bytes().to_vec();
+    let mut hasher = Keccak256::new();
+    hasher.update(&message);
+    let message_hash = hasher.finalize();
+    let mut message_hash_arr = [0u8; 32];
+    message_hash_arr.copy_from_slice(&message_hash.as_slice());
+    let message_struct = secp256k1::Message::parse(&message_hash_arr);
+    let (signature, recovery_id) = secp256k1::sign(&message_struct, &private_key);
+    let signature_arr = signature.serialize();
 
     let signature_data = SignatureData {
-        signature: decoded_signature,
-        recovery_id,
-        message: message.as_bytes().to_vec(),
+        signature: signature_arr,
+        recovery_id: recovery_id.serialize(),
+        message,
     };
 
     let mut transaction = Transaction::new_with_payer(
-        &[validate_signature(&audius::id(), valid_signer, signer_group, signature_data).unwrap()],
+        &[validate_signature(
+            &audius::id(),
+            valid_signer,
+            &valid_signer_data.signer_group,
+            signature_data,
+        )
+        .unwrap()],
         Some(&config.fee_payer.pubkey()),
     );
 
@@ -215,34 +279,13 @@ fn main() {
                      Defaults to the client keypair.",
                 ),
         )
+        .subcommand(SubCommand::with_name("create-signer-group").about("Create a new signer group"))
         .subcommand(
-            SubCommand::with_name("init-signer-group")
-                .about("Create a new signer group")
+            SubCommand::with_name("create-valid-signer")
+                .about("Create new valid signer and add to the signer group")
                 .arg(
                     Arg::with_name("signer_group")
-                        .long("signer-group")
-                        .validator(is_pubkey)
-                        .value_name("ADDRESS")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Signer group to be created."),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("init-valid-signer")
-                .about("Add valid signer to the signer group")
-                .arg(
-                    Arg::with_name("valid_signer")
-                        .long("valid-signer-account")
-                        .validator(is_pubkey)
-                        .value_name("ADDRESS")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Account of valid signer."),
-                )
-                .arg(
-                    Arg::with_name("signer_group")
-                        .long("signer-group")
+                        .index(1)
                         .validator(is_pubkey)
                         .value_name("ADDRESS")
                         .takes_value(true)
@@ -251,7 +294,7 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("eth_address")
-                        .long("ethereum-address")
+                        .index(2)
                         .validator(is_hex)
                         .value_name("ADDRESS")
                         .takes_value(true)
@@ -264,29 +307,20 @@ fn main() {
                 .about("Remove valid signer from the signer group")
                 .arg(
                     Arg::with_name("valid_signer")
-                        .long("valid-signer-account")
+                        .index(1)
                         .validator(is_pubkey)
                         .value_name("ADDRESS")
                         .takes_value(true)
                         .required(true)
                         .help("Account of valid signer to be removed."),
-                )
-                .arg(
-                    Arg::with_name("signer_group")
-                        .long("signer-group")
-                        .validator(is_pubkey)
-                        .value_name("ADDRESS")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Signer group to remove from."),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("validate-signature")
+            SubCommand::with_name("send-message")
                 .about("Validate signer's signature")
                 .arg(
                     Arg::with_name("valid_signer")
-                        .long("valid-signer-account")
+                        .index(1)
                         .validator(is_pubkey)
                         .value_name("ADDRESS")
                         .takes_value(true)
@@ -294,35 +328,16 @@ fn main() {
                         .help("Account of valid signer."),
                 )
                 .arg(
-                    Arg::with_name("signer_group")
-                        .long("signer-group")
-                        .validator(is_pubkey)
-                        .value_name("ADDRESS")
+                    Arg::with_name("secret_key")
+                        .index(2)
+                        .value_name("SECRET")
                         .takes_value(true)
                         .required(true)
-                        .help("Signer group signer belongs to."),
-                )
-                .arg(
-                    Arg::with_name("signature")
-                        .long("secp256k1-signature")
-                        .validator(is_hex)
-                        .value_name("SIGNATURE")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Secp256k1 signature."),
-                )
-                .arg(
-                    Arg::with_name("recovery_id")
-                        .long("recovery-id")
-                        .validator(is_parsable::<u8>)
-                        .value_name("RECOVERY_ID")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Recovery id required to reconstruct address from signature."),
+                        .help("Valid signer's private key."),
                 )
                 .arg(
                     Arg::with_name("message")
-                        .long("message")
+                        .index(3)
                         .value_name("MESSAGE")
                         .takes_value(true)
                         .required(true)
@@ -375,35 +390,21 @@ fn main() {
     solana_logger::setup_with_default("solana=info");
 
     let _ = match matches.subcommand() {
-        ("init-signer-group", Some(arg_matches)) => {
-            let signer_group: Pubkey = pubkey_of(arg_matches, "signer_group").unwrap();
-            command_init_signer_group(&config, &signer_group)
-        }
-        ("init-valid-signer", Some(arg_matches)) => {
-            let valid_signer: Pubkey = pubkey_of(arg_matches, "valid_signer").unwrap();
+        ("create-signer-group", Some(_)) => command_create_signer_group(&config),
+        ("create-valid-signer", Some(arg_matches)) => {
             let signer_group: Pubkey = pubkey_of(arg_matches, "signer_group").unwrap();
             let eth_address: String = value_t_or_exit!(arg_matches, "eth_address", String);
-            command_init_valid_signer(&config, &valid_signer, &signer_group, eth_address)
+            command_create_valid_signer(&config, &signer_group, eth_address)
         }
         ("clear-valid-signer", Some(arg_matches)) => {
             let valid_signer: Pubkey = pubkey_of(arg_matches, "valid_signer").unwrap();
-            let signer_group: Pubkey = pubkey_of(arg_matches, "signer_group").unwrap();
-            command_clear_valid_signer(&config, &valid_signer, &signer_group)
+            command_clear_valid_signer(&config, &valid_signer)
         }
-        ("validate-signature", Some(arg_matches)) => {
+        ("send-message", Some(arg_matches)) => {
             let valid_signer: Pubkey = pubkey_of(arg_matches, "valid_signer").unwrap();
-            let signer_group: Pubkey = pubkey_of(arg_matches, "signer_group").unwrap();
-            let signature: String = value_t_or_exit!(arg_matches, "signature", String);
-            let recovery_id: u8 = value_t_or_exit!(arg_matches, "recovery_id", u8);
+            let secret_key: String = value_t_or_exit!(arg_matches, "secret_key", String);
             let message: String = value_t_or_exit!(arg_matches, "message", String);
-            command_validate_signature(
-                &config,
-                &valid_signer,
-                &signer_group,
-                signature,
-                recovery_id,
-                message,
-            )
+            command_send_message(&config, &valid_signer, secret_key, message)
         }
         _ => unreachable!(),
     }
