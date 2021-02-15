@@ -1,4 +1,7 @@
-*/target
+*target
+*/node_modules
+package-lock.json
 Cargo.lock
 .vscode
 .DS_Store
+.python-version
