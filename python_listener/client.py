@@ -14,6 +14,8 @@ http_client = Client(SOLANA_ENDPOINT)
 
 slot_from = None
 
+print(f"Listening for transactions on {AUDIUS_PROGRAM}")
+
 while True:
     if not slot_from:
         slot_from = http_client.get_slot()['result']
@@ -28,6 +30,7 @@ while True:
             for instruction in tx_info['result']['transaction']['message']['instructions']:
                 if instruction['programIdIndex'] == audius_program_index:
                     signed_msg = base58.b58decode(instruction['data'])[65:].decode()
-                    print(f"Get 'send message' transaction: {tx_info['result']['transaction']['signatures'][0]}")
-                    print(f"Signed message: {signed_msg}")
+                    print(f"TX: {tx_info['result']['transaction']['signatures'][0]}")
+                    print(f"Message: \"{signed_msg}\"")
     sleep(SLEEP_TIME)
+    print("...")

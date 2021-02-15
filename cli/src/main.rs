@@ -11,7 +11,6 @@ use clap::{
 use hex;
 use hex::FromHex;
 use secp256k1::SecretKey;
-use sha3::{Digest, Keccak256};
 use solana_clap_utils::{
     input_parsers::pubkey_of,
     input_validators::{is_keypair, is_pubkey, is_url},
@@ -29,6 +28,7 @@ use solana_sdk::{
 };
 use std::process::exit;
 
+#[allow(dead_code)]
 struct Config {
     rpc_client: RpcClient,
     verbose: bool,
@@ -322,10 +322,10 @@ fn main() {
                     Arg::with_name("eth_address")
                         .index(2)
                         .validator(is_hex)
-                        .value_name("ADDRESS")
+                        .value_name("ETH_ADDRESS")
                         .takes_value(true)
                         .required(true)
-                        .help("Ethereum address of valid signer's private key."),
+                        .help("Ethereum address calculated valid signer's private key (without 0x prefix)."),
                 ),
         )
         .subcommand(
