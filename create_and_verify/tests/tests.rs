@@ -1,5 +1,6 @@
 #![cfg(feature = "test-bpf")]
 
+use borsh::BorshSerialize;
 use rand::{thread_rng, Rng};
 use secp256k1::{PublicKey, SecretKey};
 use sha3::Digest;
@@ -142,10 +143,16 @@ async fn test_call_example_instruction() {
     let secp_pubkey = PublicKey::from_secret_key(&priv_key);
     let eth_address = construct_eth_address(&secp_pubkey);
 
-    let message = [8u8; 30];
+    let track_data = state::TrackData {
+        user_id: String::from("U348512"),
+        track_id: String::from("T52354"),
+        source: String::from("some/path/to/source"),
+    };
+
+    let message = track_data.try_to_vec().unwrap();
 
     let secp256_program_instruction =
-        secp256k1_instruction::new_secp256k1_instruction(&priv_key, &message);
+        secp256k1_instruction::new_secp256k1_instruction(&priv_key, message.as_ref());
 
     let start = 1;
     let end = start + audius::state::SecpSignatureOffsets::SIGNATURE_OFFSETS_SERIALIZED_SIZE;
@@ -162,12 +169,6 @@ async fn test_call_example_instruction() {
     signature.copy_from_slice(&secp256_program_instruction.data[sig_start..sig_end]);
 
     let recovery_id = secp256_program_instruction.data[sig_end];
-
-    let signature_data = audius::instruction::SignatureData {
-        signature,
-        recovery_id,
-        message: message.to_vec(),
-    };
 
     let (mut banks_client, payer, recent_blockhash, signer_group, group_owner) = setup().await;
 
@@ -205,6 +206,12 @@ async fn test_call_example_instruction() {
     .await
     .unwrap();
 
+    let instruction_args = instruction::InstructionArgs {
+        track_data,
+        signature,
+        recovery_id,
+    };
+
     let mut transaction = Transaction::new_with_payer(
         &[
             secp256_program_instruction,
@@ -212,7 +219,7 @@ async fn test_call_example_instruction() {
                 &id(),
                 &valid_signer.pubkey(),
                 &signer_group.pubkey(),
-                signature_data,
+                instruction_args,
             )
             .unwrap(),
         ],

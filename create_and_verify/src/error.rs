@@ -15,6 +15,12 @@ pub enum ProgramTemplateError {
     /// Example error
     #[error("Example error")]
     ExampleError,
+    /// Instruction unpack error
+    #[error("Instruction unpack error")]
+    InstructionUnpackError,
+    /// Invalid track data were passed
+    #[error("Invalid track data were passed")]
+    InvalidTrackData,
 }
 impl From<ProgramTemplateError> for ProgramError {
     fn from(e: ProgramTemplateError) -> Self {
@@ -34,6 +40,8 @@ impl PrintProgramError for ProgramTemplateError {
     {
         match self {
             ProgramTemplateError::ExampleError => msg!("Example error message"),
+            ProgramTemplateError::InstructionUnpackError => msg!("Instruction unpack error"),
+            ProgramTemplateError::InvalidTrackData => msg!("Invalid track data were passed"),
         }
     }
 }

@@ -1,6 +1,11 @@
 //! Program state processor
 
-use crate::instruction::TemplateInstruction;
+use crate::{
+    error::ProgramTemplateError,
+    instruction::{InstructionArgs, TemplateInstruction},
+};
+use audius::instruction::SignatureData;
+use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
     account_info::next_account_info, account_info::AccountInfo, entrypoint::ProgramResult, msg,
     program::invoke, pubkey::Pubkey,
@@ -13,7 +18,7 @@ impl Processor {
     pub fn process_example_instruction(
         _program_id: &Pubkey,
         accounts: &[AccountInfo],
-        signature_data: audius::instruction::SignatureData,
+        instruction_data: InstructionArgs,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         // initialized valid signer account
@@ -24,6 +29,15 @@ impl Processor {
         let audius_account_info = next_account_info(account_info_iter)?;
         // sysvar instruction
         let sysvar_instruction = next_account_info(account_info_iter)?;
+
+        let signature_data = SignatureData {
+            signature: instruction_data.signature,
+            recovery_id: instruction_data.recovery_id,
+            message: instruction_data
+                .track_data
+                .try_to_vec()
+                .or(Err(ProgramTemplateError::InvalidTrackData))?,
+        };
 
         invoke(
             &audius::instruction::validate_signature_with_sysvar(
@@ -51,7 +65,8 @@ impl Processor {
         accounts: &[AccountInfo],
         input: &[u8],
     ) -> ProgramResult {
-        let instruction = TemplateInstruction::unpack(input)?;
+        let instruction = TemplateInstruction::try_from_slice(input)
+            .or(Err(ProgramTemplateError::InstructionUnpackError))?;
         match instruction {
             TemplateInstruction::ExampleInstruction(signature_data) => {
                 msg!("Instruction: ExampleInstruction");
