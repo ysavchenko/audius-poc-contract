@@ -193,3 +193,26 @@ pub fn validate_signature(
         data,
     })
 }
+
+/// Creates `ValidateSignatureWithSysvar` instruction
+pub fn validate_signature_with_sysvar(
+    program_id: &Pubkey,
+    valid_signer_account: &Pubkey,
+    signer_group: &Pubkey,
+    sysvar_instruction: &Pubkey,
+    signature_data: SignatureData,
+) -> Result<Instruction, ProgramError> {
+    let args = AudiusInstruction::ValidateSignature(signature_data);
+    let data = args.pack();
+
+    let accounts = vec![
+        AccountMeta::new_readonly(*valid_signer_account, false),
+        AccountMeta::new_readonly(*signer_group, false),
+        AccountMeta::new_readonly(*sysvar_instruction, false),
+    ];
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    })
+}
