@@ -35,59 +35,6 @@ function newProgramAccount(newAccount, lamports, space) {
     return instruction;
 }
 
-async function createSignerGroup() {
-    let newSignerGroup = new solanaWeb3.Account();
-    console.log("New signer group account creating: ", newSignerGroup.publicKey.toString());
-    let accountCreatingInstruction = newProgramAccount(newSignerGroup, 10000000, SIGNER_GROUP_SIZE);
-
-    let transaction = new solanaWeb3.Transaction();
-    transaction.add(accountCreatingInstruction);
-
-    transaction.add({keys: [{pubkey: newSignerGroup.publicKey, isSigner: false, isWritable: true},
-                            {pubkey: owner.publicKey, isSigner: false, isWritable: false}],
-                    programId: AUDIUS_PROGRAM,
-                    data: [0]});
-    
-    let signature = await solanaWeb3.sendAndConfirmTransaction(devnetConnection, transaction, [feePayer, newSignerGroup]);
-
-    console.log("Signature: ", signature);
-}
-
-async function createValidSigner(signer_group) {
-    let privKey;
-    do {
-    privKey = crypto.randomBytes(32);
-    } while (!secp256k1.privateKeyVerify(privKey))
-
-    let ethAddress = eth_utils.privateToAddress(Buffer.from(privKey));
-    let ethAddressArr = ethAddress.toJSON().data;
-
-    console.log("Created private key: ", privKey.toString("hex"));
-    console.log("Ethereum address: ", ethAddress.toString("hex"));
-
-    let newValidSigner = new solanaWeb3.Account();
-    console.log("New valid signer account creating: ", newValidSigner.publicKey.toString());
-
-    let accountCreatingInstruction = newProgramAccount(newValidSigner, 100000000, VALID_SIGNER_SIZE);
-
-    let transaction = new solanaWeb3.Transaction();
-    transaction.add(accountCreatingInstruction);
-
-    let instruction_data = [1].concat(ethAddressArr);
-
-    let signerGroupPubK = new solanaWeb3.PublicKey(signer_group);
-
-    transaction.add({keys: [{pubkey: newValidSigner.publicKey, isSigner: false, isWritable: true},
-                                        {pubkey: signerGroupPubK, isSigner: false, isWritable: false},
-                                        {pubkey: owner.publicKey, isSigner: true, isWritable: false},],
-                                programId: AUDIUS_PROGRAM,
-                                data: instruction_data});
-    
-    let signature = await solanaWeb3.sendAndConfirmTransaction(devnetConnection, transaction, [feePayer, newValidSigner, owner]);
-
-    console.log("Signature: ", signature);
-}
-
 async function validateSignature(validSigner, privateKey, message) {
     let privKey = Buffer.from(privateKey, "hex")
     let pubKey = secp256k1.publicKeyCreate(privKey, false);
@@ -123,6 +70,4 @@ async function validateSignature(validSigner, privateKey, message) {
     console.log("Signature: ", signature);
 }
 
-exports.createSignerGroup = createSignerGroup;
-exports.createValidSigner = createValidSigner;
 exports.validateSignature = validateSignature;
