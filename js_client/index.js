@@ -31,4 +31,12 @@ commander.command("send-message <validSigner> <privateKey> <message>")
         })
     })
 
+commander.command("create-and-verify-message <validSigner> <privateKey> <userId> <trackId> <source>")
+    .description("Call program to construct and verify signed track data")
+    .action((validSigner, privateKey, userId, trackId, source) => {
+        instr.createAndVerifyMessage(validSigner, privateKey, userId, trackId, source).then(() => {
+            console.log("Message was constructed, signed and verified");
+        })
+    })
+
 commander.parse(process.argv);
