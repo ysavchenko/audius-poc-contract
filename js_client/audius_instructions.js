@@ -9,10 +9,10 @@ const borsh = require("borsh");
 let SIGNER_GROUP_SIZE = 33;
 let VALID_SIGNER_SIZE = 53;
 let AUDIUS_PROGRAM = new solanaWeb3.PublicKey(
-  "3QqhXLvBgPZ4DCV3YjyzpiQWfeR4Lf2bSKqSnj5c8wkE"
+  "Fm4g3bGuezevgqSHopjEDGRGCtVU6CDpFXZE3832EzGs"
 );
 let CREATE_AND_VERIFY_PROGRAM = new solanaWeb3.PublicKey(
-  "5k7kvu9G3ynRP9ZpNWbX7XUzxtUkE5EC7Eyqu2eQvEgG"
+  "C2HjteAb3yAZU65nGx5grjXeEvEZj4EozAZjThzSBYYc"
 );
 let INSTRUCTIONS_PROGRAM = new solanaWeb3.PublicKey(
   "Sysvar1nstructions1111111111111111111111111"
@@ -33,7 +33,8 @@ class TrackData extends Assignable {}
 class InstructionArgs extends Assignable {}
 class InstructionEnum extends Assignable {}
 
-let url = solanaWeb3.clusterApiUrl("devnet", false);
+// let url = solanaWeb3.clusterApiUrl("devnet", false);
+let url = "http://localhost:8899"
 
 let devnetConnection = new solanaWeb3.Connection(url);
 
