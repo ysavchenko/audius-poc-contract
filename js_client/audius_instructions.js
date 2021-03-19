@@ -315,7 +315,6 @@ async function createAndVerifyMessage(
     programId: CREATE_AND_VERIFY_PROGRAM,
     data: serializedInstructionArgs,
   });
-  console.dir(transaction, { depth: 5 })
   console.log(`Sending to ${CREATE_AND_VERIFY_PROGRAM}`)
 
   let signature = await solanaWeb3.sendAndConfirmTransaction(

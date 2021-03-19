@@ -11,7 +11,6 @@ SECP_PROGRAM = "KeccakSecp256k11111111111111111111111111111"
 
 SLEEP_TIME = 1
 
-# SOLANA_ENDPOINT = "https://devnet.solana.com"
 SOLANA_ENDPOINT = "http://localhost:8899"
 
 http_client = Client(SOLANA_ENDPOINT)
@@ -35,10 +34,13 @@ while True:
     print('----')
     print(f'slot_from:{slot_from}')
     print(f'AUDIUS_PROGRAM:{AUDIUS_PROGRAM} | {transaction}')
-    print(f'CREATE_AND_VERIFY_PROGRAM:{CREATE_AND_VERIFY_PROGRAM} | {transaction}')
+    print(f'CREATE_AND_VERIFY_PROGRAM:{CREATE_AND_VERIFY_PROGRAM} | {transaction2}')
 
     # Check tx for eth registry, log statement if found
-    if transaction["result"][0]["slot"] > slot_from:
+    transaction_slot = transaction["result"][0]["slot"]
+    print(f'AUDIUS_PROGRAM: {transaction_slot} > {slot_from}')
+    # if transaction_slot >= slot_from:
+    if transaction_slot > slot_from:
         slot_from = transaction["result"][0]["slot"]
         tx_info = http_client.get_confirmed_transaction(
             transaction["result"][0]["signature"]
@@ -55,7 +57,11 @@ while True:
                     print(signed_msg)
 
     # Check tx for tracklistencount program, log statement if found
-    if transaction2["result"][0]["slot"] > slot_from:
+    transaction2_slot = transaction2["result"][0]["slot"]
+    print(f'CREATE_AND_VERIFY: {transaction2_slot} > {slot_from}')
+    # Clarify why this check was > and not >=, is this on purpose?
+    # if transaction2_slot >= slot_from:
+    if transaction2_slot >= slot_from:
         slot_from = transaction2["result"][0]["slot"]
         tx_info = http_client.get_confirmed_transaction(
             transaction2["result"][0]["signature"]
@@ -63,13 +69,11 @@ while True:
         if SECP_PROGRAM in tx_info["result"]["transaction"]["message"]["accountKeys"]:
             audius_program_index = tx_info["result"]["transaction"]["message"][
                 "accountKeys"
-            ].index(AUDIUS_PROGRAM)
+            ].index(CREATE_AND_VERIFY_PROGRAM)
             for instruction in tx_info["result"]["transaction"]["message"][
                 "instructions"
             ]:
                 if instruction["programIdIndex"] == audius_program_index:
-                    signed_msg = base58.b58decode(instruction['data'])[65:].decode()
-                    print(signed_msg)
                     try:
                         hex_data = binascii.hexlify(
                             bytearray(list(base58.b58decode(instruction["data"])))
