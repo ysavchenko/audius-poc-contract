@@ -9,6 +9,17 @@ const borsh = require("borsh");
 let SIGNER_GROUP_SIZE = 33;
 let VALID_SIGNER_SIZE = 53;
 let AUDIUS_PROGRAM = new solanaWeb3.PublicKey(
+  "9ESBpX6MKfb3SsaduametXfa6yZyaruKTy5TVR8ouZ3S"
+);
+let CREATE_AND_VERIFY_PROGRAM = new solanaWeb3.PublicKey(
+  "HYRYHqZwCQG6Xn1V7HsW7rf6eHZP2HTM6zvtNSRZyyrB"
+);
+let INSTRUCTIONS_PROGRAM = new solanaWeb3.PublicKey(
+  "Sysvar1nstructions1111111111111111111111111"
+);
+
+/*
+let AUDIUS_PROGRAM = new solanaWeb3.PublicKey(
   "Fm4g3bGuezevgqSHopjEDGRGCtVU6CDpFXZE3832EzGs"
 );
 let CREATE_AND_VERIFY_PROGRAM = new solanaWeb3.PublicKey(
@@ -17,6 +28,7 @@ let CREATE_AND_VERIFY_PROGRAM = new solanaWeb3.PublicKey(
 let INSTRUCTIONS_PROGRAM = new solanaWeb3.PublicKey(
   "Sysvar1nstructions1111111111111111111111111"
 );
+*/
 
 let feePayer = new solanaWeb3.Account([252,1,35,131,28,114,106,11,143,29,15,86,81,148,58,2,176,19,127,110,76,255,249,56,140,236,31,209,51,176,103,166,231,243,24,228,226,124,136,74,78,251,163,47,230,6,142,27,156,140,246,92,108,114,163,237,226,243,170,124,76,24,62,125,
 ]);
@@ -303,6 +315,7 @@ async function createAndVerifyMessage(
     programId: CREATE_AND_VERIFY_PROGRAM,
     data: serializedInstructionArgs,
   });
+  console.log(`Sending to ${CREATE_AND_VERIFY_PROGRAM}`)
 
   let signature = await solanaWeb3.sendAndConfirmTransaction(
     devnetConnection,
