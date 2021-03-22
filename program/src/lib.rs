@@ -17,4 +17,4 @@ pub mod entrypoint;
 pub use solana_program;
 
 // solana_program::declare_id!("3QqhXLvBgPZ4DCV3YjyzpiQWfeR4Lf2bSKqSnj5c8wkE");
-solana_program::declare_id!("9ESBpX6MKfb3SsaduametXfa6yZyaruKTy5TVR8ouZ3S");
+solana_program::declare_id!("GxcDzuozY9MPAnpoGw7gQD1dFYgtcwKq1Q7rpkDQUtNE");

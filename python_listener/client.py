@@ -5,8 +5,8 @@ import binascii
 import codecs
 from solana.rpc.api import Client
 
-AUDIUS_PROGRAM = "9ESBpX6MKfb3SsaduametXfa6yZyaruKTy5TVR8ouZ3S"
-CREATE_AND_VERIFY_PROGRAM = "HYRYHqZwCQG6Xn1V7HsW7rf6eHZP2HTM6zvtNSRZyyrB"
+AUDIUS_PROGRAM = "GxcDzuozY9MPAnpoGw7gQD1dFYgtcwKq1Q7rpkDQUtNE"
+CREATE_AND_VERIFY_PROGRAM = "GBpxjk4mKyRW77BwmJPvAL7nyG37pk6MwtQfuYYWkKTt"
 SECP_PROGRAM = "KeccakSecp256k11111111111111111111111111111"
 
 SLEEP_TIME = 1
@@ -35,14 +35,14 @@ while True:
         CREATE_AND_VERIFY_PROGRAM, limit=1
     )
 
-    print('----')
-    print(f'slot_from:{slot_from}')
-    print(f'AUDIUS_PROGRAM:{AUDIUS_PROGRAM} | {transaction}')
-    print(f'CREATE_AND_VERIFY_PROGRAM:{CREATE_AND_VERIFY_PROGRAM} | {transaction2}')
+    print("----")
+    print(f"slot_from:{slot_from}")
+    print(f"AUDIUS_PROGRAM:{AUDIUS_PROGRAM} | {transaction}")
+    print(f"CREATE_AND_VERIFY_PROGRAM:{CREATE_AND_VERIFY_PROGRAM} | {transaction2}")
 
     # Check tx for eth registry, log statement if found
     transaction_slot = transaction["result"][0]["slot"]
-    print(f'AUDIUS_PROGRAM: {transaction_slot} > {slot_from}')
+    print(f"AUDIUS_PROGRAM: {transaction_slot} > {slot_from}")
     # if transaction_slot >= slot_from:
     if transaction_slot > slot_from:
         slot_from = transaction["result"][0]["slot"]
@@ -57,7 +57,7 @@ while True:
                 "instructions"
             ]:
                 if instruction["programIdIndex"] == audius_program_index:
-                    signed_msg = base58.b58decode(instruction['data'])[65:].decode()
+                    signed_msg = base58.b58decode(instruction["data"])[65:].decode()
                     print(signed_msg)
 
     # Check tx for tracklistencount program, log statement if found

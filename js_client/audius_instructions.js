@@ -9,10 +9,10 @@ const borsh = require("borsh");
 let SIGNER_GROUP_SIZE = 33;
 let VALID_SIGNER_SIZE = 53;
 let AUDIUS_PROGRAM = new solanaWeb3.PublicKey(
-  "9ESBpX6MKfb3SsaduametXfa6yZyaruKTy5TVR8ouZ3S"
+  "GxcDzuozY9MPAnpoGw7gQD1dFYgtcwKq1Q7rpkDQUtNE"
 );
 let CREATE_AND_VERIFY_PROGRAM = new solanaWeb3.PublicKey(
-  "HYRYHqZwCQG6Xn1V7HsW7rf6eHZP2HTM6zvtNSRZyyrB"
+  "GBpxjk4mKyRW77BwmJPvAL7nyG37pk6MwtQfuYYWkKTt"
 );
 let INSTRUCTIONS_PROGRAM = new solanaWeb3.PublicKey(
   "Sysvar1nstructions1111111111111111111111111"
