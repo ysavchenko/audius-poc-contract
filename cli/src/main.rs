@@ -69,6 +69,7 @@ fn command_create_signer_group(config: &Config) -> CommandResult {
         "Creating new signer group account {}",
         signer_group.pubkey()
     );
+    println!("Audius ID {}", &audius::id());
 
     let signer_group_account_balance = config
         .rpc_client
@@ -224,6 +225,7 @@ fn command_send_message(
         recovery_id,
         message: message.to_vec(),
     };
+    // msg!("{}", &audius::id());
 
     let mut transaction = Transaction::new_with_payer(
         &[
@@ -382,6 +384,7 @@ fn main() {
         let json_rpc_url = value_t!(matches, "json_rpc_url", String)
             .unwrap_or_else(|_| cli_config.json_rpc_url.clone());
 
+        println!("{}", json_rpc_url);
         let owner = signer_from_path(
             &matches,
             &cli_config.keypair_path,
