@@ -16,10 +16,14 @@ SOLANA_ENDPOINT = "http://localhost:8899"
 http_client = Client(SOLANA_ENDPOINT)
 
 slot_from = None
+slot_from_2 = None
 
 while True:
     if not slot_from:
         slot_from = http_client.get_slot()["result"]
+
+    if not slot_from_2:
+        slot_from_2 = http_client.get_slot()["result"]
 
     # Monitor eth registry (AUDIUS_PROGRAM)
     transaction = http_client.get_confirmed_signature_for_address2(
@@ -58,11 +62,11 @@ while True:
 
     # Check tx for tracklistencount program, log statement if found
     transaction2_slot = transaction2["result"][0]["slot"]
-    print(f'CREATE_AND_VERIFY: {transaction2_slot} > {slot_from}')
+    print(f'CREATE_AND_VERIFY: {transaction2_slot} > {slot_from_2}')
     # Clarify why this check was > and not >=, is this on purpose?
-    # if transaction2_slot >= slot_from:
-    if transaction2_slot >= slot_from:
-        slot_from = transaction2["result"][0]["slot"]
+    # if transaction2_slot >= slot_from_2:
+    if transaction2_slot >= slot_from_2:
+        slot_from_2 = transaction2["result"][0]["slot"]
         tx_info = http_client.get_confirmed_transaction(
             transaction2["result"][0]["signature"]
         )
