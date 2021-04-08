@@ -35,7 +35,9 @@ impl Processor {
         // signer group owner account
         let group_owner_info = next_account_info(account_info_iter)?;
 
-        let mut signer_group = SignerGroup::try_from_slice(&signer_group_info.data.borrow())?;
+        let mut signer_group = Box::new(SignerGroup::try_from_slice(
+            &signer_group_info.data.borrow(),
+        )?);
 
         if signer_group.is_initialized() {
             return Err(AudiusError::SignerGroupAlreadyInitialized.into());
@@ -62,13 +64,17 @@ impl Processor {
         // signer group's owner
         let signer_groups_owner_info = next_account_info(account_info_iter)?;
 
-        let signer_group = SignerGroup::try_from_slice(&signer_group_info.data.borrow())?;
+        let signer_group = Box::new(SignerGroup::try_from_slice(
+            &signer_group_info.data.borrow(),
+        )?);
 
         if !signer_group.is_initialized() {
             return Err(AudiusError::UninitializedSignerGroup.into());
         }
 
-        let mut valid_signer = ValidSigner::try_from_slice(&valid_signer_info.data.borrow())?;
+        let mut valid_signer = Box::new(ValidSigner::try_from_slice(
+            &valid_signer_info.data.borrow(),
+        )?);
 
         if valid_signer.is_initialized() {
             return Err(AudiusError::SignerAlreadyInitialized.into());
@@ -97,13 +103,17 @@ impl Processor {
         // signer group's owner
         let signer_groups_owner_info = next_account_info(account_info_iter)?;
 
-        let signer_group = SignerGroup::try_from_slice(&signer_group_info.data.borrow())?;
+        let signer_group = Box::new(SignerGroup::try_from_slice(
+            &signer_group_info.data.borrow(),
+        )?);
 
         if !signer_group.is_initialized() {
             return Err(AudiusError::UninitializedSignerGroup.into());
         }
 
-        let mut valid_signer = ValidSigner::try_from_slice(&valid_signer_info.data.borrow())?;
+        let mut valid_signer = Box::new(ValidSigner::try_from_slice(
+            &valid_signer_info.data.borrow(),
+        )?);
 
         if !valid_signer.is_initialized() {
             return Err(AudiusError::ValidSignerNotInitialized.into());
@@ -148,13 +158,17 @@ impl Processor {
         )
         .unwrap();
 
-        let signer_group = SignerGroup::try_from_slice(&signer_group_info.data.borrow())?;
+        let signer_group = Box::new(SignerGroup::try_from_slice(
+            &signer_group_info.data.borrow(),
+        )?);
 
         if !signer_group.is_initialized() {
             return Err(AudiusError::UninitializedSignerGroup.into());
         }
 
-        let valid_signer = ValidSigner::try_from_slice(&valid_signer_info.data.borrow())?;
+        let valid_signer = Box::new(ValidSigner::try_from_slice(
+            &valid_signer_info.data.borrow(),
+        )?);
 
         if !valid_signer.is_initialized() {
             return Err(AudiusError::ValidSignerNotInitialized.into());

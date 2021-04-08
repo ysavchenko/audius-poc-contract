@@ -5,7 +5,7 @@ import binascii
 import codecs
 from solana.rpc.api import Client
 
-AUDIUS_PROGRAM = "5k7kvu9G3ynRP9ZpNWbX7XUzxtUkE5EC7Eyqu2eQvEgG"
+AUDIUS_PROGRAM = "Fs2Fmuo266ohhQjGRC6FCufjYaCHkuhyyRi3zn2xqrQP"
 SECP_PROGRAM = "KeccakSecp256k11111111111111111111111111111"
 
 SLEEP_TIME = 3

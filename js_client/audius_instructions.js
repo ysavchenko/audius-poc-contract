@@ -9,10 +9,10 @@ const borsh = require("borsh");
 let SIGNER_GROUP_SIZE = 33;
 let VALID_SIGNER_SIZE = 53;
 let AUDIUS_PROGRAM = new solanaWeb3.PublicKey(
-  "3QqhXLvBgPZ4DCV3YjyzpiQWfeR4Lf2bSKqSnj5c8wkE"
+  "Eed4UXg3TqTkzbgT47WWMQtbzpxMUeHitt2jfAa6pmep"
 );
 let CREATE_AND_VERIFY_PROGRAM = new solanaWeb3.PublicKey(
-  "5k7kvu9G3ynRP9ZpNWbX7XUzxtUkE5EC7Eyqu2eQvEgG"
+  "Fs2Fmuo266ohhQjGRC6FCufjYaCHkuhyyRi3zn2xqrQP"
 );
 let INSTRUCTIONS_PROGRAM = new solanaWeb3.PublicKey(
   "Sysvar1nstructions1111111111111111111111111"
@@ -32,111 +32,14 @@ class Assignable {
 class TrackData extends Assignable {}
 class InstructionArgs extends Assignable {}
 class InstructionEnum extends Assignable {}
+class SignatureData extends Assignable {}
+class InitSignerGroup extends Assignable {}
+class InitValidSigner extends Assignable {}
+class ClearValidSigner extends Assignable {}
 
 let url = solanaWeb3.clusterApiUrl("devnet", false);
 
 let devnetConnection = new solanaWeb3.Connection(url);
-
-async function newSystemAccountWithAirdrop(connection, lamports) {
-  const account = new solanaWeb3.Account();
-  await connection.requestAirdrop(account.publicKey, lamports);
-  return account;
-}
-
-function newProgramAccount(newAccount, lamports, space) {
-  let instruction = solanaWeb3.SystemProgram.createAccount({
-    fromPubkey: feePayer.publicKey,
-    newAccountPubkey: newAccount.publicKey,
-    lamports,
-    space, // data space
-    programId: AUDIUS_PROGRAM,
-  });
-
-  return instruction;
-}
-
-async function createSignerGroup() {
-  let newSignerGroup = new solanaWeb3.Account();
-  console.log(
-    "New signer group account creating: ",
-    newSignerGroup.publicKey.toString()
-  );
-  let accountCreatingInstruction = newProgramAccount(
-    newSignerGroup,
-    10000000,
-    SIGNER_GROUP_SIZE
-  );
-
-  let transaction = new solanaWeb3.Transaction();
-  transaction.add(accountCreatingInstruction);
-
-  transaction.add({
-    keys: [
-      { pubkey: newSignerGroup.publicKey, isSigner: false, isWritable: true },
-      { pubkey: owner.publicKey, isSigner: false, isWritable: false },
-    ],
-    programId: AUDIUS_PROGRAM,
-    data: [0],
-  });
-
-  let signature = await solanaWeb3.sendAndConfirmTransaction(
-    devnetConnection,
-    transaction,
-    [feePayer, newSignerGroup]
-  );
-
-  console.log("Signature: ", signature);
-}
-
-async function createValidSigner(signer_group) {
-  let privKey;
-  do {
-    privKey = crypto.randomBytes(32);
-  } while (!secp256k1.privateKeyVerify(privKey));
-
-  let ethAddress = eth_utils.privateToAddress(Buffer.from(privKey));
-  let ethAddressArr = ethAddress.toJSON().data;
-
-  console.log("Created private key: ", privKey.toString("hex"));
-  console.log("Ethereum address: ", ethAddress.toString("hex"));
-
-  let newValidSigner = new solanaWeb3.Account();
-  console.log(
-    "New valid signer account creating: ",
-    newValidSigner.publicKey.toString()
-  );
-
-  let accountCreatingInstruction = newProgramAccount(
-    newValidSigner,
-    100000000,
-    VALID_SIGNER_SIZE
-  );
-
-  let transaction = new solanaWeb3.Transaction();
-  transaction.add(accountCreatingInstruction);
-
-  let instruction_data = [1].concat(ethAddressArr);
-
-  let signerGroupPubK = new solanaWeb3.PublicKey(signer_group);
-
-  transaction.add({
-    keys: [
-      { pubkey: newValidSigner.publicKey, isSigner: false, isWritable: true },
-      { pubkey: signerGroupPubK, isSigner: false, isWritable: false },
-      { pubkey: owner.publicKey, isSigner: true, isWritable: false },
-    ],
-    programId: AUDIUS_PROGRAM,
-    data: instruction_data,
-  });
-
-  let signature = await solanaWeb3.sendAndConfirmTransaction(
-    devnetConnection,
-    transaction,
-    [feePayer, newValidSigner, owner]
-  );
-
-  console.log("Signature: ", signature);
-}
 
 async function validateSignature(validSigner, privateKey, message) {
   let privKey = Buffer.from(privateKey, "hex");
@@ -155,10 +58,53 @@ async function validateSignature(validSigner, privateKey, message) {
   const sigObj = secp256k1.ecdsaSign(Uint8Array.from(msg_hash), privKey);
 
   let transaction = new solanaWeb3.Transaction();
-  let instruction_data = [3];
-  instruction_data = instruction_data.concat(Array.from(sigObj.signature));
-  instruction_data = instruction_data.concat([sigObj.recid]);
-  instruction_data = instruction_data.concat(msg);
+  let instructionSchema = new Map([
+    [
+      InstructionEnum,
+      {
+        kind: "enum",
+        field: "choose",
+        values: [["initSignerGroup", InitSignerGroup], ["initValidSigner", InitValidSigner], ["clearValidSigner", ClearValidSigner], ["instruction", SignatureData]],
+      },
+    ],
+    [
+      SignatureData,
+      {
+        kind: "struct",
+        fields: [
+          ["signature", [64]],
+          ["recovery_id", "u8"],
+          ["message", [msg.length]],
+        ],
+      },
+    ],
+  ]);
+
+  let instructionArgs = new SignatureData({
+    signature: Array.from(sigObj.signature),
+    recovery_id: sigObj.recid,
+    message: msg,
+  });
+
+  let instructionData = new InstructionEnum({
+    instruction: instructionArgs,
+    choose: "instruction",
+  });
+
+  let serializedInstructionArgs = borsh.serialize(
+    instructionSchema,
+    instructionData
+  );
+
+  var lenBuffer = new ArrayBuffer(4);  // size of len data in Rust 4 bytes
+  if (msg.length < 256) {
+    new DataView(lenBuffer).setInt8(0, msg.length);
+  } else {
+    new DataView(lenBuffer).setInt16(0, msg.length);
+  }
+
+  let serializedInstructionArray = serializedInstructionArgs.toJSON().data;
+  serializedInstructionArray.splice(66, 0, ...new Uint8Array(lenBuffer));
 
   let secpInstruction = solanaWeb3.Secp256k1Program.createInstructionWithPublicKey(
     {
@@ -178,7 +124,7 @@ async function validateSignature(validSigner, privateKey, message) {
       { pubkey: INSTRUCTIONS_PROGRAM, isSigner: false, isWritable: false },
     ],
     programId: AUDIUS_PROGRAM,
-    data: Buffer.from(instruction_data),
+    data: serializedInstructionArray,
   });
 
   let signature = await solanaWeb3.sendAndConfirmTransaction(
@@ -311,8 +257,5 @@ async function createAndVerifyMessage(
 
   console.log("Signature: ", signature);
 }
-
-exports.createSignerGroup = createSignerGroup;
-exports.createValidSigner = createValidSigner;
 exports.validateSignature = validateSignature;
 exports.createAndVerifyMessage = createAndVerifyMessage;
