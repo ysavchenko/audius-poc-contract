@@ -213,6 +213,7 @@ async function createAndVerifyMessage(
     track_data: trackData,
     signature: Array.from(sigObj.signature),
     recovery_id: sigObj.recid,
+    timestamp: Math.round(new Date().getTime() / 1000)
   });
 
   let instructionData = new InstructionEnum({
